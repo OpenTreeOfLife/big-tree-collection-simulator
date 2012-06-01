@@ -1,0 +1,15 @@
+Makefile.in
+aclocal.m4
+autom4te.cache/output.0
+autom4te.cache/output.1
+autom4te.cache/requests
+autom4te.cache/traces.0
+autom4te.cache/traces.1
+config.h.in
+configure
+depcomp
+install-sh
+ltmain.sh
+missing
+*.Po
+buildrelease
