@@ -27,7 +27,7 @@ Then from the top of this repository you can do something like this:
     make
 
 Note that "$OPEN_TREE_BUILD_TAG" is just a tag for the build (like "release" or
-"debug" The <pre>--prefix</pre> argument should point to where you want to 
-install the tool and <pre>--with-ncl</pre> should point to the prefix directory
+"debug" The <tt>--prefix</tt> argument should point to where you want to 
+install the tool and <tt>--with-ncl</tt> should point to the prefix directory
 specified when installing NCL.
 
