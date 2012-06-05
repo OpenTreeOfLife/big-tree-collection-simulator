@@ -28,6 +28,8 @@ void filepathToPatristic(const char * filename, ostream *os)
 		NxsTreesBlock * treesB = nexusReader.GetTreesBlockTemplate();
 		assert(treesB);
 		treesB->SetAllowImplicitNames(true);
+		treesB->SetAllowUnquotedSpaces(true);
+		treesB->SetDisambiguateDuplicateNames(true);
 		if (gStrictLevel < 2)
 			{
 			NxsStoreTokensBlockReader *storerB =  nexusReader.GetUnknownBlockTemplate();
