@@ -26,6 +26,7 @@ void cleantree(std::istream & inp, std::ostream & out) {
     long filepos = 0;
     long filecol = 0;
     long fileline = 1;
+    int commentLevel = 0;
     while (inp.good()) {
         char c = inp.get(); filepos++; filecol++;
         if (std::isgraph(c)) {
@@ -48,17 +49,16 @@ void cleantree(std::istream & inp, std::ostream & out) {
                 if (curr_mode == OUT_OF_LABEL) {
                     label.clear();
                     needsQuoting = false;
-                    curr_mode = IN_LABEL;
-                    cache.clear();
                     if (c == '\'') {
                         if (!inp.good()) {
                             throw ParseExcept("Quote started then EOF", fileline, filecol, filepos);
                         }
-                        char q = inp.get(); filepos++; filecol++;
                         for (;;) {
+                            
                             if (!inp.good()) {
                                 throw ParseExcept("File reading before termination of quote", fileline, filecol, filepos);
                             }
+                            char q = inp.get(); filepos++; filecol++;
                             label.append(1, q);
                             if (q == '\'') {
                                 const char d = inp.peek();
@@ -72,18 +72,48 @@ void cleantree(std::istream & inp, std::ostream & out) {
                             }
                         }
                     }
+                    else {
+                        curr_mode = IN_LABEL;
+                        cache.clear();
+                    }
                 }
                 else if (!cache.empty()) {
                     label += cache;
                     cache.clear();
                     needsQuoting = true;
                 }
-                label.append(1, c);
-                if (strchr("\'[(){}\"-]/\\,;:=*`+<>", c) != NULL) {
+                if (strchr("\'(){}\"-]/\\,;_:=*`+<>", c) != NULL) {
                     needsQuoting = true;
-                    if (c == '\'') {
-                        label.append(1, '\'');
+                    if (c == '_') {
+                        label.append(1, ' ');
                     }
+                    else {
+                        label.append(1, c);
+                        if (c == '\'') {
+                            label.append(1, '\'');
+                        }
+                    }
+                }
+                else if (c == '[') {
+                    label.append(1, '[');
+                    commentLevel = 1;
+                    if (!inp.good()) {
+                        throw ParseExcept("Comment started then EOF", fileline, filecol, filepos);
+                    }
+                    while (commentLevel > 0) {
+                        if (!inp.good()) {
+                            throw ParseExcept("File reading before termination of comment", fileline, filecol, filepos);
+                        }
+                        char q = inp.get(); filepos++; filecol++;
+                        label.append(1, q);
+                        if (q == '[')
+                            commentLevel++;
+                        else if (q == ']') 
+                            commentLevel--;
+                    }
+                }
+                else {
+                    label.append(1, c);
                 }
             }
             //std::cerr << c << '\n';
@@ -114,7 +144,7 @@ int main(int argc, char *argv[]) {
         out << '\n';
     }
     catch (ParseExcept & x) {
-        std::cerr << "Error:  " << x.message << "\nAt line = " << x.fileline << " at column = " << x.filecol << " at pos = " << x.filepos << "\n";
+        std::cerr << "\nError:  " << x.message << "\nAt line = " << x.fileline << " at column = " << x.filecol << " at pos = " << x.filepos << "\n";
         return 3;
     }
     return 0;
