@@ -13,3 +13,4 @@ ltmain.sh
 missing
 *.Po
 buildrelease
+builddebug
