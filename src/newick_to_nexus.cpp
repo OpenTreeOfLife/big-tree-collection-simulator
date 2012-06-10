@@ -17,7 +17,7 @@ class ParseExcept {
         long filepos;
 };
 
-void cleantree(std::istream & inp, std::ostream & out) {
+void totaxa(std::istream & inp, std::ostream & out) {
     enum READING_MODE {IN_LABEL, OUT_OF_LABEL, IN_QUOTE};
     READING_MODE curr_mode = OUT_OF_LABEL;
     std::string label;
@@ -27,6 +27,7 @@ void cleantree(std::istream & inp, std::ostream & out) {
     long filecol = 0;
     long fileline = 1;
     int commentLevel = 0;
+    out << "TAXLABELS \n ";
     while (inp.good()) {
         char c = inp.get(); filepos++; filecol++;
         if (std::isgraph(c)) {
@@ -41,9 +42,7 @@ void cleantree(std::istream & inp, std::ostream & out) {
                     }
                     needsQuoting = false;
                 }
-                out << c;
-                if (c == ';')
-                    out << "\n";
+                out << "\n ";
             }
             else {
                 if (curr_mode == OUT_OF_LABEL) {
@@ -143,7 +142,7 @@ int main(int argc, char *argv[]) {
     }
     std::ostream & out(std::cout);
     try {
-        cleantree(inp, out);
+        unsigned nt = totaxa(inp, out);
         out << '\n';
     }
     catch (ParseExcept & x) {

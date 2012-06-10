@@ -17,7 +17,7 @@ class ParseExcept {
         long filepos;
 };
 
-void cleantree(std::istream & inp, std::ostream & out) {
+void indenttree(std::istream & inp, std::ostream & out) {
     enum READING_MODE {IN_LABEL, OUT_OF_LABEL, IN_QUOTE};
     READING_MODE curr_mode = OUT_OF_LABEL;
     std::string label;
@@ -27,23 +27,35 @@ void cleantree(std::istream & inp, std::ostream & out) {
     long filecol = 0;
     long fileline = 1;
     int commentLevel = 0;
+    int indentlevel = 0;
     while (inp.good()) {
         char c = inp.get(); filepos++; filecol++;
         if (std::isgraph(c)) {
             if (strchr("(),:;", c) != NULL) {
+                if (c == ')') {
+                    indentlevel--;
+                }
+                std::string ind(2*indentlevel, ' ');
+                if (c == '(') {
+                    indentlevel++;
+                }
                 if (curr_mode == IN_LABEL) {
                     curr_mode = OUT_OF_LABEL;
+                    out << ind;
                     if (needsQuoting) {
                         out << '\'' << label << '\'';
                     }
                     else {
                         out << label;
                     }
+                    out << '\n';
                     needsQuoting = false;
                 }
-                out << c;
-                if (c == ';')
+                out << ind << c << '\n';
+                if (c == ';') {
                     out << "\n";
+                    indentlevel = 0;
+                }
             }
             else {
                 if (curr_mode == OUT_OF_LABEL) {
@@ -59,6 +71,8 @@ void cleantree(std::istream & inp, std::ostream & out) {
                                 throw ParseExcept("File reading before termination of quote", fileline, filecol, filepos);
                             }
                             char q = inp.get(); filepos++; filecol++;
+                            //std::cerr << "q=" << q << '\n';
+                            //std::cerr << "label=" << label << '\n';
                             if (q == '\'') {
                                 const char d = inp.peek();
                                 if (d == '\'') {
@@ -69,11 +83,11 @@ void cleantree(std::istream & inp, std::ostream & out) {
                                     break;
                                 }
                             }
-                            else {
+                            else
                                 label.append(1, q);
-                            }
                         }
-                        out << '\'' << label <<  "\'\n" ;
+                        std::string ind(2*indentlevel, ' ');
+                        out <<  ind << '\'' << label <<  "\'\n" ;
                     }
                     else {
                         curr_mode = IN_LABEL;
@@ -143,7 +157,7 @@ int main(int argc, char *argv[]) {
     }
     std::ostream & out(std::cout);
     try {
-        cleantree(inp, out);
+        indenttree(inp, out);
         out << '\n';
     }
     catch (ParseExcept & x) {
