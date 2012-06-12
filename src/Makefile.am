@@ -1,7 +1,7 @@
 AM_CPPFLAGS = @CPPFLAGS@
 AM_LDFLAGS  = @LDFLAGS@
 
-bin_PROGRAMS = big-tree-collection-simulator clean-tree indent-newick big-tree-sim
+bin_PROGRAMS = big-tree-sim
 
 big_tree_collection_simulator_SOURCES = \
 	big-tree-coll-sim.cpp 
