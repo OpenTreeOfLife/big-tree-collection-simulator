@@ -3,8 +3,6 @@ AM_LDFLAGS  = @LDFLAGS@
 
 bin_PROGRAMS = big-tree-sim
 
-big_tree_collection_simulator_SOURCES = \
-	big-tree-coll-sim.cpp 
 
 clean_tree_SOURCES = clean_tree.cpp
 
