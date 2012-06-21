@@ -275,16 +275,16 @@ Tree * parse_from_newick_stream(std::istream & input, TaxonNameUniverse & taxa) 
     for(;;) {
         signed char c = rdbuf->sbumpc(); filepos++; filecol++;
         if (c == ',') {
-                if (curr_mode == IN_LABEL and prev_control_char != ':') {
-                    taxa.add_label(label, curr_node, tree);
-                }
-                else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
-                    throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
-                }
-                curr_node = curr_node->get_new_sib(*tree);
-                prev_control_char = c;
-                curr_mode = OUT_OF_LABEL;
+            if (curr_mode == IN_LABEL and prev_control_char != ':') {
+                taxa.add_label(label, curr_node, tree);
             }
+            else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
+                throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
+            }
+            curr_node = curr_node->get_new_sib(*tree);
+            prev_control_char = c;
+            curr_mode = OUT_OF_LABEL;
+        }
         else if (c == ')') {
             if (curr_mode == IN_LABEL and prev_control_char != ':') {
                 taxa.add_label(label, curr_node, tree);
