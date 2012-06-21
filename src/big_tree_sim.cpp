@@ -448,6 +448,7 @@ int main(int argc, char *argv[]) {
     try {
         tree = parse_from_newick_stream(inp, taxa);
         out << '\n';
+        std::cerr << taxa.get_num_labels() << " labels read.\n";
     }
     catch (ParseExcept & x) {
         std::cerr << "\nError:  " << x.message << "\nAt line = " << x.fileline << " at column = " << x.filecol << " at pos = " << x.filepos << "\n";
