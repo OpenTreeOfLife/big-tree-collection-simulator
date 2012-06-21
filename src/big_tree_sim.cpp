@@ -1,4 +1,5 @@
 #include <iostream>
+#include <ios>
 #include <fstream>
 #include <cstring>
 #include <string>
@@ -256,7 +257,7 @@ Node * Tree::get_new_node() {
 
 }
 
-Tree * parse_from_newick_stream(std::istream & inp, TaxonNameUniverse & taxa) {
+Tree * parse_from_newick_stream(std::istream & input, TaxonNameUniverse & taxa) {
     enum READING_MODE {IN_LABEL, OUT_OF_LABEL, IN_QUOTE};
     READING_MODE curr_mode = OUT_OF_LABEL;
     std::string label;
@@ -270,8 +271,9 @@ Tree * parse_from_newick_stream(std::istream & inp, TaxonNameUniverse & taxa) {
     Node * curr_node = nullptr;
     Tree * tree = new Tree();
     curr_node = tree->get_root();
-    while (inp.good()) {
-        char c = inp.get(); filepos++; filecol++;
+    std::streambuf * rdbuf = input.rdbuf();
+    for(;;) {
+        signed char c = rdbuf->sbumpc(); filepos++; filecol++;
         if (std::isgraph(c)) {
             if (strchr("(),:;", c) != NULL) {
                 if (c == ',') {
@@ -307,6 +309,10 @@ Tree * parse_from_newick_stream(std::istream & inp, TaxonNameUniverse & taxa) {
                     assert(curr_node == tree->get_root());
                     return tree;
                 }
+                else if (c == EOF) {
+                    assert(curr_node == tree->get_root());
+                    return tree;
+                }
                 prev_control_char = c;
                 curr_mode = OUT_OF_LABEL;
             }
@@ -314,19 +320,19 @@ Tree * parse_from_newick_stream(std::istream & inp, TaxonNameUniverse & taxa) {
                 if (curr_mode == OUT_OF_LABEL) {
                     label.clear();
                     if (c == '\'') {
-                        if (!inp.good()) {
+                        if (!input.good()) {
                             throw ParseExcept("Quote started then EOF", fileline, filecol, filepos);
                         }
                         for (;;) {
-                            if (!inp.good()) {
+                            if (!input.good()) {
                                 throw ParseExcept("File reading before termination of quote", fileline, filecol, filepos);
                             }
-                            char q = inp.get(); filepos++; filecol++;
+                            char q = rdbuf->sbumpc(); filepos++; filecol++;
                             if (q == '\'') {
-                                const char d = inp.peek();
+                                const signed char d = rdbuf->sgetc(); // peek
                                 if (d == '\'') {
                                     label.append(1, q);
-                                    q = inp.get(); filepos++; filecol++;
+                                    q = rdbuf->sbumpc(); filepos++; filecol++;
                                 }
                                 else {
                                     break;
@@ -346,27 +352,22 @@ Tree * parse_from_newick_stream(std::istream & inp, TaxonNameUniverse & taxa) {
                     label += cache;
                     cache.clear();
                 }
-                if (strchr("\'(){}\"-]/\\,;_:=*`+<>", c) != NULL) {
-                    if (c == '_') {
-                        label.append(1, ' ');
-                    }
-                    else {
-                        label.append(1, c);
-                    }
+                if (c == '_') {
+                    label.append(1, ' ');
                 }
                 else if (c == '[') {
                     if (preserve_comments) {
                         label.append(1, '[');
                     }
                     comment_level = 1;
-                    if (!inp.good()) {
+                    if (!input.good()) {
                         throw ParseExcept("Comment started then EOF", fileline, filecol, filepos);
                     }
                     while (comment_level > 0) {
-                        if (!inp.good()) {
+                        if (!input.good()) {
                             throw ParseExcept("File reading before termination of comment", fileline, filecol, filepos);
                         }
-                        char q = inp.get(); filepos++; filecol++;
+                        char q = rdbuf->sbumpc(); filepos++; filecol++;
                         if (preserve_comments) {
                             label.append(1, q);
                         }
@@ -393,6 +394,7 @@ Tree * parse_from_newick_stream(std::istream & inp, TaxonNameUniverse & taxa) {
     return tree;
 }
 int main(int argc, char *argv[]) {
+    std::ios_base::sync_with_stdio(false);
     if (argc < 2) {
         std::cerr << "Expecting a file path to a newick formatted tree\n";
         return 1;
