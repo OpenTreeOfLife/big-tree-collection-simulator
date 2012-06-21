@@ -396,6 +396,7 @@ Tree * parse_from_newick_stream(std::istream & input, TaxonNameUniverse & taxa) 
     }
     return tree;
 }
+
 int main(int argc, char *argv[]) {
     std::ios_base::sync_with_stdio(false);
     if (argc < 2) {
@@ -416,7 +417,8 @@ int main(int argc, char *argv[]) {
                 std::cerr << "Expecting number of leaves > 4\n";
                 return 1;
             }
-            gNumBuckets = (unsigned) n;
+            gNumBuckets = (unsigned long) 3*n;
+            Tree::set_initial_node_store_size(1.2*n);
             prev_flag = '\0';
         }
         else if (prev_flag == '\0') {
