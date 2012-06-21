@@ -274,121 +274,124 @@ Tree * parse_from_newick_stream(std::istream & input, TaxonNameUniverse & taxa) 
     std::streambuf * rdbuf = input.rdbuf();
     for(;;) {
         signed char c = rdbuf->sbumpc(); filepos++; filecol++;
-        if (std::isgraph(c)) {
-            if (strchr("(),:;", c) != NULL) {
-                if (c == ',') {
-                    if (curr_mode == IN_LABEL and prev_control_char != ':') {
-                        taxa.add_label(label, curr_node, tree);
-                    }
-                    else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
-                        throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
-                    }
-                    curr_node = curr_node->get_new_sib(*tree);
+        if (c == ',') {
+                if (curr_mode == IN_LABEL and prev_control_char != ':') {
+                    taxa.add_label(label, curr_node, tree);
                 }
-                else if (c == ')') {
-                    if (curr_mode == IN_LABEL and prev_control_char != ':') {
-                        taxa.add_label(label, curr_node, tree);
-                    }
-                    else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
-                        throw ParseExcept("Expecting every leaf to have a label. Found a closed parenthesis.", fileline, filecol, filepos);
-                    }
-                    curr_node = curr_node->get_parent();
+                else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
+                    throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
                 }
-                else if (c == '(') {
-                    if (curr_mode == IN_LABEL) {
-                        throw ParseExcept("Unexpected ( after taxon label. Expecting labels after clade", fileline, filecol, filepos);
-                    }
-                    curr_node = curr_node->get_new_left_child(*tree);
-                }
-                else if (c == ':') {
-                    if (curr_mode == IN_LABEL and prev_control_char != ':') {
-                        taxa.add_label(label, curr_node, tree);
-                    }
-                }
-                else if (c == ';') {
-                    assert(curr_node == tree->get_root());
-                    return tree;
-                }
-                else if (c == EOF) {
-                    assert(curr_node == tree->get_root());
-                    return tree;
-                }
+                curr_node = curr_node->get_new_sib(*tree);
                 prev_control_char = c;
                 curr_mode = OUT_OF_LABEL;
             }
-            else {
-                if (curr_mode == OUT_OF_LABEL) {
-                    label.clear();
-                    if (c == '\'') {
-                        if (!input.good()) {
-                            throw ParseExcept("Quote started then EOF", fileline, filecol, filepos);
-                        }
-                        for (;;) {
-                            if (!input.good()) {
-                                throw ParseExcept("File reading before termination of quote", fileline, filecol, filepos);
-                            }
-                            char q = rdbuf->sbumpc(); filepos++; filecol++;
-                            if (q == '\'') {
-                                const signed char d = rdbuf->sgetc(); // peek
-                                if (d == '\'') {
-                                    label.append(1, q);
-                                    q = rdbuf->sbumpc(); filepos++; filecol++;
-                                }
-                                else {
-                                    break;
-                                }
-                            }
-                            else {
-                                label.append(1, q);
-                            }
-                        }
-                    }
-                    else {
-                        curr_mode = IN_LABEL;
-                        cache.clear();
-                    }
-                }
-                else if (!cache.empty()) {
-                    label += cache;
-                    cache.clear();
-                }
-                if (c == '_') {
-                    label.append(1, ' ');
-                }
-                else if (c == '[') {
-                    if (preserve_comments) {
-                        label.append(1, '[');
-                    }
-                    comment_level = 1;
+        else if (c == ')') {
+            if (curr_mode == IN_LABEL and prev_control_char != ':') {
+                taxa.add_label(label, curr_node, tree);
+            }
+            else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
+                throw ParseExcept("Expecting every leaf to have a label. Found a closed parenthesis.", fileline, filecol, filepos);
+            }
+            curr_node = curr_node->get_parent();
+            prev_control_char = c;
+            curr_mode = OUT_OF_LABEL;
+        }
+        else if (c == '(') {
+            if (curr_mode == IN_LABEL) {
+                throw ParseExcept("Unexpected ( after taxon label. Expecting labels after clade", fileline, filecol, filepos);
+            }
+            curr_node = curr_node->get_new_left_child(*tree);
+            prev_control_char = c;
+            curr_mode = OUT_OF_LABEL;
+        }
+        else if (c == ':') {
+            if (curr_mode == IN_LABEL and prev_control_char != ':') {
+                taxa.add_label(label, curr_node, tree);
+            }
+            prev_control_char = c;
+            curr_mode = OUT_OF_LABEL;
+        }
+        else if (c == ';') {
+            assert(curr_node == tree->get_root());
+            return tree;
+        }
+        else if(isgraph(c)) {
+            if (curr_mode == OUT_OF_LABEL) {
+                label.clear();
+                if (c == '\'') {
                     if (!input.good()) {
-                        throw ParseExcept("Comment started then EOF", fileline, filecol, filepos);
+                        throw ParseExcept("Quote started then EOF", fileline, filecol, filepos);
                     }
-                    while (comment_level > 0) {
+                    for (;;) {
                         if (!input.good()) {
-                            throw ParseExcept("File reading before termination of comment", fileline, filecol, filepos);
+                            throw ParseExcept("File reading before termination of quote", fileline, filecol, filepos);
                         }
                         char q = rdbuf->sbumpc(); filepos++; filecol++;
-                        if (preserve_comments) {
+                        if (q == '\'') {
+                            const signed char d = rdbuf->sgetc(); // peek
+                            if (d == '\'') {
+                                label.append(1, q);
+                                q = rdbuf->sbumpc(); filepos++; filecol++;
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                        else {
                             label.append(1, q);
                         }
-                        if (q == '[')
-                            comment_level++;
-                        else if (q == ']')
-                            comment_level--;
                     }
                 }
                 else {
-                    label.append(1, c);
+                    curr_mode = IN_LABEL;
+                    cache.clear();
                 }
             }
-            //std::cerr << c << '\n';
-        }
-        else if (curr_mode == IN_LABEL) {
-            if (c == '\n') {
-                filecol = 0;
-                fileline = 1;
+            else if (!cache.empty()) {
+                label += cache;
+                cache.clear();
             }
-            cache.append(1, ' '); // converts all non-graphical characters to spaces!
+            if (c == '_') {
+                label.append(1, ' ');
+            }
+            else if (c == '[') {
+                if (preserve_comments) {
+                    label.append(1, '[');
+                }
+                comment_level = 1;
+                if (!input.good()) {
+                    throw ParseExcept("Comment started then EOF", fileline, filecol, filepos);
+                }
+                while (comment_level > 0) {
+                    if (!input.good()) {
+                        throw ParseExcept("File reading before termination of comment", fileline, filecol, filepos);
+                    }
+                    char q = rdbuf->sbumpc(); filepos++; filecol++;
+                    if (preserve_comments) {
+                        label.append(1, q);
+                    }
+                    if (q == '[')
+                        comment_level++;
+                    else if (q == ']')
+                        comment_level--;
+                }
+            }
+            else {
+                label.append(1, c);
+            }
+        }
+        else {
+            if (c == EOF) {
+                assert(curr_node == tree->get_root());
+                return tree;
+            }
+            if (curr_mode == IN_LABEL) {
+                if (c == '\n') {
+                    filecol = 0;
+                    fileline = 1;
+                }
+                cache.append(1, ' '); // converts all non-graphical characters to spaces!
+            }
         }
     }
     return tree;
