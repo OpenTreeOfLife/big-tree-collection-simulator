@@ -11,7 +11,9 @@
 #include <unordered_map>
 #include <sstream>
 #include <cstdlib>
+#include <algorithm>
 
+#include <config.h>
 typedef unsigned long nnodes_t; // big enough to index the # of nodes
 
 
@@ -278,7 +280,7 @@ Tree * parse_from_newick_stream(std::istream & input, TaxonNameUniverse & taxa) 
             if (curr_mode == IN_LABEL and prev_control_char != ':') {
                 taxa.add_label(label, curr_node, tree);
             }
-            else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
+            else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
                 throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
             }
             curr_node = curr_node->get_new_sib(*tree);
@@ -289,7 +291,7 @@ Tree * parse_from_newick_stream(std::istream & input, TaxonNameUniverse & taxa) 
             if (curr_mode == IN_LABEL and prev_control_char != ':') {
                 taxa.add_label(label, curr_node, tree);
             }
-            else if (curr_node->get_label().empty() and curr_node->get_left_child() != nullptr) {
+            else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
                 throw ParseExcept("Expecting every leaf to have a label. Found a closed parenthesis.", fileline, filecol, filepos);
             }
             curr_node = curr_node->get_parent();
@@ -397,6 +399,166 @@ Tree * parse_from_newick_stream(std::istream & input, TaxonNameUniverse & taxa) 
     return tree;
 }
 
+
+
+std::vector<std::string> read_command(std::istream & inp) {
+    std::stringbuf str_buf;
+    inp.get(str_buf, ';');
+    std::string x = str_buf.str();
+    if (inp.good()) {
+        inp.get(); // skip the delimiting character
+    }
+    std::vector<std::string> command_vec;
+    if (x.empty()) {
+        return command_vec;
+    }
+    bool in_word = false;
+    unsigned word_start = 0;
+    unsigned i = 0;
+    for (; i < x.length(); ++i) {
+        if (isgraph(x[i])) {
+            if (! in_word) {
+                in_word = true;
+                word_start = i;
+            }
+        }
+        else {
+            if (in_word) {
+                command_vec.push_back(x.substr(word_start, i - word_start));
+            }
+            in_word = false;
+        }
+    }
+    if (in_word) {
+        command_vec.push_back(x.substr(word_start, i - word_start));
+    }
+    return command_vec;
+}
+
+class ProgState {
+    public:
+        ProgState()
+            :err_stream(std::cerr), 
+            strict_mode(false),
+            outp(0L) {
+            }
+        void set_output_stream( std::ostream * new_out) {
+            if (&(this->outp_obj) == this->outp) {
+                this->outp_obj.close();
+            }
+            this->outp = new_out;
+        }
+        void set_output_file(const char * new_out) {
+            if (&(this->outp_obj) == this->outp) {
+                this->outp_obj.close();
+            }
+            if (new_out) {
+                this->outp_obj.open(new_out, std::ios::app);
+                this->outp = &(this->outp_obj);
+            }
+            else {
+                this->outp = 0L;
+            }
+        }
+        bool out_good() const {
+            return this->outp and this->outp->good();
+        }
+        std::ostream & err_stream;
+        bool strict_mode;
+    private:
+        std::ostream * outp;
+        std::ofstream outp_obj;
+};
+
+std::string capitalize(const std::string & x) {
+    std::string cmd = x;
+    std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
+    return cmd;
+}
+
+bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state) {
+    prog_state.err_stream << "Unrecognized argument \"" << arg << "\" to the \"" << cmd << "\" command.\n";
+    return !prog_state.strict_mode;
+}
+bool process_command(const std::vector<std::string> & command_vec,
+                     const TaxonNameUniverse & taxa,
+                     const Tree & tree,
+                     ProgState & prog_state) {
+    if (command_vec.empty()) {
+        return true;
+    }
+    
+    prog_state.err_stream << "Command:  ";
+    std::string cmd = capitalize(command_vec[0]);
+    prog_state.err_stream << cmd << "  \n";
+    for (const std::string & word : command_vec) {
+        prog_state.err_stream << '"' << word << "\" ";
+    }
+    prog_state.err_stream << "\n";
+    if (cmd == "QUIT") {
+        return false;
+    }
+    else if (cmd == "OUT") {
+        if (command_vec.size() == 1) {
+            prog_state.err_stream << "Expecting an argument (FILE, STD, or STOP) after OUT command.";
+            return !prog_state.strict_mode;
+        }
+        std::string arg = capitalize(command_vec[1]);
+        if (arg == "FILE") {
+            if (command_vec.size() == 2) {
+                prog_state.err_stream << "Expecting a file path after OUT FILE";
+                return !prog_state.strict_mode;
+            }
+            const char * filepath = command_vec.at(2).c_str();
+            prog_state.set_output_file(filepath);
+            if (! prog_state.out_good()) {
+                prog_state.err_stream << "Could not open the file \"" << filepath << "\". Output set to standard out!\n";
+                prog_state.set_output_stream(&std::cout);
+                return !prog_state.strict_mode;
+            }
+        }
+        else if (arg == "STD") {
+            prog_state.set_output_stream(&std::cout);
+        }
+        else if (arg == "STOP") {
+            prog_state.set_output_file(nullptr);
+        }
+        else {
+            return unrecognize_arg("OUT", command_vec.at(1).c_str(), prog_state);
+        }
+    }
+    else {
+        prog_state.err_stream << "Command \"" << command_vec[0] << "\" is not recognized (use \"QUIT ;\" to exit)\n";
+        return !prog_state.strict_mode;
+    }
+    return true;
+    
+}
+
+void run_command_interpreter(std::istream & command_stream,
+                             const TaxonNameUniverse & taxa,
+                             const Tree & tree,
+                             ProgState & prog_state) {
+    std::string command;
+    bool keep_executing = true;
+    while (keep_executing && command_stream.good()) {
+        std::vector<std::string> command_vec = read_command(command_stream);
+        keep_executing = process_command(command_vec, 
+                                         taxa,
+                                         tree,
+                                         prog_state);        
+    }
+}
+void print_help(std::ostream & out) {
+    out << PACKAGE_STRING << '\n';
+    out << "\nUsage:\n  "<< PACKAGE << " [-ns] <taxonomy-file>\n";
+    out << "Command line options:\n";
+    out << "   -h         this help message\n";
+    out << "   -i         interactive mode\n";
+    out << "   -n ####  number of leaves\n";
+    out << "   -s ####  random number seed\n";
+}
+
 int main(int argc, char *argv[]) {
     std::ios_base::sync_with_stdio(false);
     if (argc < 2) {
@@ -406,6 +568,7 @@ int main(int argc, char *argv[]) {
     std::string tree_filename;
     char prev_flag = '\0';
     char * endptr;
+    bool interactive = false;
     for (int i = 1; i < argc; ++i) {
         if (prev_flag == 'n') {
             long int n = std::strtol(argv[i], &endptr, 10);
@@ -421,6 +584,19 @@ int main(int argc, char *argv[]) {
             Tree::set_initial_node_store_size(1.2*n);
             prev_flag = '\0';
         }
+        else if (prev_flag == 's') {
+            long int n = std::strtol(argv[i], &endptr, 10);
+            if (endptr == argv[i]) {
+                std::cerr << "Expecting number after -s\n";
+                return 1;
+            }
+            if (n < 1) {
+                std::cerr << "Expecting the random number seed to be > 1\n";
+                return 1;
+            }
+            
+            prev_flag = '\0';
+        }
         else if (prev_flag == '\0') {
             std::string arg(argv[i]);
             if (arg.length() > 1 and arg[0] == '-') {
@@ -428,7 +604,16 @@ int main(int argc, char *argv[]) {
                     std::cerr << "Expecting each flag to be specified as a separate argument\n";
                     return 1;
                 }
-                prev_flag = arg[1];
+                if (arg[1] == 'h') {
+                    print_help(std::cerr);
+                    return 0;
+                }
+                else if (arg[1] == 'i') {
+                    interactive = true;
+                } 
+                else {
+                    prev_flag = arg[1];
+                }
             }
             else {
                 if (!tree_filename.empty()) {
@@ -449,17 +634,28 @@ int main(int argc, char *argv[]) {
         std::cerr << "Could not open " << tree_filename << "\n";
         return 2;
     }
-    std::ostream & out(std::cout);
     TaxonNameUniverse taxa;
     const Tree * tree = nullptr;
     try {
         tree = parse_from_newick_stream(inp, taxa);
-        out << '\n';
+        if (tree == nullptr) {
+            std::cerr << "No tree found!\n";
+            return 1;
+        }
         std::cerr << taxa.get_num_labels() << " labels read.\n";
     }
     catch (ParseExcept & x) {
         std::cerr << "\nError:  " << x.message << "\nAt line = " << x.fileline << " at column = " << x.filecol << " at pos = " << x.filepos << "\n";
         return 3;
     }
+    
+    ProgState prog_state;
+    prog_state.set_output_stream(&std::cout);
+    std::istream & command_stream = std::cin;
+    if (interactive) {
+        run_command_interpreter(command_stream, taxa, *tree, prog_state);
+    }
+    prog_state.set_output_file(nullptr);
+    
     return 0;
 }
