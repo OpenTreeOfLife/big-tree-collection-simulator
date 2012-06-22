@@ -480,6 +480,39 @@ bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state)
     prog_state.err_stream << "Unrecognized argument \"" << arg << "\" to the \"" << cmd << "\" command.\n";
     return !prog_state.strict_mode;
 }
+
+bool process_out_command(const std::vector<std::string> command_vec,
+                         ProgState & prog_state) {
+    if (command_vec.size() == 1) {
+        prog_state.err_stream << "Expecting an argument (FILE, STD, or STOP) after OUT command.";
+        return !prog_state.strict_mode;
+    }
+    std::string arg = capitalize(command_vec[1]);
+    if (arg == "FILE") {
+        if (command_vec.size() == 2) {
+            prog_state.err_stream << "Expecting a file path after OUT FILE";
+            return !prog_state.strict_mode;
+        }
+        const char * filepath = command_vec.at(2).c_str();
+        prog_state.set_output_file(filepath);
+        if (! prog_state.out_good()) {
+            prog_state.err_stream << "Could not open the file \"" << filepath << "\". Output set to standard out!\n";
+            prog_state.set_output_stream(&std::cout);
+            return !prog_state.strict_mode;
+        }
+        return true;
+    }
+    if (arg == "STD") {
+        prog_state.set_output_stream(&std::cout);
+        return true;
+    }
+    if (arg == "STOP") {
+        prog_state.set_output_file(nullptr);
+        return true;
+    }
+    return unrecognize_arg("OUT", command_vec.at(1).c_str(), prog_state);
+}
+
 bool process_command(const std::vector<std::string> & command_vec,
                      const TaxonNameUniverse & taxa,
                      const Tree & tree,
@@ -499,33 +532,7 @@ bool process_command(const std::vector<std::string> & command_vec,
         return false;
     }
     else if (cmd == "OUT") {
-        if (command_vec.size() == 1) {
-            prog_state.err_stream << "Expecting an argument (FILE, STD, or STOP) after OUT command.";
-            return !prog_state.strict_mode;
-        }
-        std::string arg = capitalize(command_vec[1]);
-        if (arg == "FILE") {
-            if (command_vec.size() == 2) {
-                prog_state.err_stream << "Expecting a file path after OUT FILE";
-                return !prog_state.strict_mode;
-            }
-            const char * filepath = command_vec.at(2).c_str();
-            prog_state.set_output_file(filepath);
-            if (! prog_state.out_good()) {
-                prog_state.err_stream << "Could not open the file \"" << filepath << "\". Output set to standard out!\n";
-                prog_state.set_output_stream(&std::cout);
-                return !prog_state.strict_mode;
-            }
-        }
-        else if (arg == "STD") {
-            prog_state.set_output_stream(&std::cout);
-        }
-        else if (arg == "STOP") {
-            prog_state.set_output_file(nullptr);
-        }
-        else {
-            return unrecognize_arg("OUT", command_vec.at(1).c_str(), prog_state);
-        }
+        return process_out_command(command_vec, prog_state);
     }
     else {
         prog_state.err_stream << "Command \"" << command_vec[0] << "\" is not recognized (use \"QUIT ;\" to exit)\n";
