@@ -33,6 +33,9 @@ class TaxonLabel {
         const char * c_str() const {
             return this->_label.c_str();
         }
+        const char * newick() const {
+            return this->_label.c_str();
+        }
         bool empty() const {
             return this->_label.empty();
         }
@@ -71,23 +74,136 @@ class Node {
             _right_sib(nullptr),
             _parent(nullptr) {
         }
-        Node<T> * get_left_child() const {
+        bool is_leaf() const {
+            return (this->_left_child == nullptr);
+        }
+        bool is_internal() const {
+            return (this->_left_child != nullptr);
+        }
+        const Node<T> * get_right_sib() const {
+            return this->_right_sib;
+        }
+        const Node<T> * get_left_child() const {
             return this->_left_child;
+        }
+        const Node<T> * get_parent() const {
+            return this->_parent;
+        }
+        Node<T> * get_right_sib() {
+            return this->_right_sib;
+        }
+        Node<T> * get_left_child() {
+            return this->_left_child;
+        }
+        Node<T> * get_parent() {
+            return this->_parent;
         }
         Node<T> * get_new_sib(Tree<T> &);
         Node<T> * get_new_left_child(Tree<T> &);
         Node<T> * get_rightmost_sib();
-        Node<T> * get_parent() {
-            return this->_parent;
-        }
         void set_label(const TaxonLabel & tl) {
             this->_label = tl;
         }
         TaxonLabel get_label() const {
             return this->_label;
         }
-        T & get_const_blob() const {
+        const T & get_const_blob() const {
             return this->blob;
+        }
+
+        class const_preorder_iterator {
+            public:
+                const_preorder_iterator(const Node<T> * nd) {
+                    this->_curr_nd = nd;
+                }
+                const_preorder_iterator(const const_preorder_iterator & other) {
+                    this->_curr_nd = other._curr_nd;
+                    this->_sib_stack = other._sib_stack;
+                }
+                const Node<T> & operator*() {
+                    return *(this->_curr_nd);
+                }
+                const Node<T> * operator->() {
+                    return &(operator*());
+                }
+                const_preorder_iterator & operator++() {
+                    assert(this->_curr_nd);
+                    const Node<T> * lc = this->_curr_nd->get_left_child();
+                    if (lc) {
+                        const Node<T> * lcrs = lc->get_right_sib();
+                        if (lcrs) {
+                            this->_sib_stack.push(lcrs);
+                        }
+                        this->_curr_nd = lc;
+                    }
+                    else if ( this->_sib_stack.empty()) {
+                        this->_curr_nd = nullptr;
+                    }
+                    else {
+                        this->_curr_nd = this->_sib_stack.top();
+                        this->_sib_stack.pop();
+                    }
+                    return *this;
+                }
+                const_preorder_iterator & operator++(int) {
+                    const_preorder_iterator tmp(*this);
+                    ++(*this);
+                    return tmp;
+                }
+                bool operator==(const const_preorder_iterator & other) const {
+                    return this->_curr_nd == other._curr_nd;
+                }
+                bool operator!=(const const_preorder_iterator & other) const {
+                    return this->_curr_nd != other._curr_nd;
+                }
+            private:
+                const Node<T> * _curr_nd;
+                std::stack<const Node<T> *> _sib_stack;
+        };
+
+
+        const_preorder_iterator begin_preorder() const {
+            return const_preorder_iterator(this);
+        }        
+        const_preorder_iterator end_preorder() const {
+            return const_preorder_iterator(nullptr);
+        }        
+
+        void write_newick(std::ostream &o, bool edge_lengths) const {
+            std::cerr << "in Node::write_newick\n";
+            const_preorder_iterator it = this->begin_preorder();
+            const_preorder_iterator end_it = this->end_preorder();
+            for (; it != end_it; ++it) {
+                //std::cerr << "nd\n";
+                const Node<T> & nd = *it;
+                if (nd.is_internal()) {
+                    o << '(';
+                }
+                else {
+                    o << nd.get_label().newick();
+                    if (edge_lengths) {
+                        o << ':' << nd.get_const_blob().edge_length();
+                    }
+                    if (nd.get_right_sib() != nullptr) {
+                        o << ',';
+                    }
+                    else {
+                        const Node<T> * c = &nd;
+                        const Node<T> * a = nd.get_parent();
+                        while (a and c != this and c->get_right_sib() == nullptr) {
+                            o << ')' << a->get_label().newick();
+                            if (edge_lengths) {
+                                o << ':' << a->get_const_blob().edge_length();
+                            }
+                            c = a;
+                            a = a->get_parent();
+                        }
+                        if (a and a != this) {
+                            o << ',';
+                        }
+                    }
+                }
+            }
         }
     private:
         T blob;
@@ -114,6 +230,20 @@ class Tree {
         Node_T * get_new_node();
         void register_label2node(const TaxonLabel & tl, Node_T *nd) {
             this->_label2node[tl.get_label()] = nd;
+        }
+
+        typename Node_T::const_preorder_iterator begin_preorder() const {
+            return Node_T::const_preorder_iterator(this->_root);
+        }        
+        typename Node_T::const_preorder_iterator end_preorder() const {
+            return Node_T::const_preorder_iterator(nullptr);
+        }        
+        void write_newick(std::ostream &o, bool edge_lengths) const {
+            if (this->_root == nullptr) {
+                return;
+            }
+            this->_root->write_newick(o, edge_lengths);
+            o << ";";
         }
     private:
         void _replinish_node_store();

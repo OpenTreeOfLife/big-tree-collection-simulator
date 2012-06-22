@@ -11,9 +11,77 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Main impl
 ////////////////////
-typedef bool blob_t;
-typedef Tree<blob_t> MyTree;
-typedef TaxonNameUniverse<blob_t> MyTaxonNameUniverse;
+struct  blob_t {
+    public:
+        double edge_length() const {
+            return 0.0;
+        }
+};
+typedef Tree<blob_t> SimTree;
+typedef TaxonNameUniverse<blob_t> SimTaxonNameUniverse;
+
+////////////////////////////////////////////////////////////////////////////////
+// Wraps up the changeable state of the program (as it runs through the command
+//  line execution.
+///////
+class ProgState {
+    public:
+        ProgState(SimTree & tree)
+            :err_stream(std::cerr), 
+            strict_mode(false),
+            outp(&std::cout),
+            full_tree(tree),
+            current_tree(nullptr) {
+            this->current_tree = &(this->full_tree);
+        }
+        
+        void print_tree(bool edge_lengths) const {
+            if (this->outp != nullptr) {
+                assert(this->current_tree);
+                this->err_stream << "Calling write_newick...\n";
+                this->current_tree->write_newick(*this->outp, edge_lengths);
+                *this->outp << std::endl;
+            }
+        }
+        
+        std::ostream * get_output_stream() {
+            return this->outp;
+        }
+        
+        void set_output_stream( std::ostream * new_out) {
+            if (&(this->outp_obj) == this->outp) {
+                this->outp_obj.close();
+            }
+            this->outp = new_out;
+        }
+        
+        void set_output_file(const char * new_out) {
+            if (&(this->outp_obj) == this->outp) {
+                this->outp_obj.close();
+            }
+            if (new_out) {
+                this->outp_obj.open(new_out, std::ios::app);
+                this->outp = &(this->outp_obj);
+            }
+            else {
+                this->outp = 0L;
+            }
+        }
+        
+        bool out_good() const {
+            return this->outp and this->outp->good();
+        }
+        
+        std::ostream & err_stream;
+        bool strict_mode;
+    private:
+        std::ostream * outp;
+        std::ofstream outp_obj;
+        SimTree & full_tree;
+        SimTree * current_tree;
+        
+};
+
 
 
 std::vector<std::string> read_command(std::istream & inp) {
@@ -50,41 +118,6 @@ std::vector<std::string> read_command(std::istream & inp) {
     return command_vec;
 }
 
-class ProgState {
-    public:
-        ProgState()
-            :err_stream(std::cerr), 
-            strict_mode(false),
-            outp(0L) {
-            }
-        void set_output_stream( std::ostream * new_out) {
-            if (&(this->outp_obj) == this->outp) {
-                this->outp_obj.close();
-            }
-            this->outp = new_out;
-        }
-        void set_output_file(const char * new_out) {
-            if (&(this->outp_obj) == this->outp) {
-                this->outp_obj.close();
-            }
-            if (new_out) {
-                this->outp_obj.open(new_out, std::ios::app);
-                this->outp = &(this->outp_obj);
-            }
-            else {
-                this->outp = 0L;
-            }
-        }
-        bool out_good() const {
-            return this->outp and this->outp->good();
-        }
-        std::ostream & err_stream;
-        bool strict_mode;
-    private:
-        std::ostream * outp;
-        std::ofstream outp_obj;
-};
-
 std::string capitalize(const std::string & x) {
     std::string cmd = x;
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
@@ -96,6 +129,11 @@ bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state)
     return !prog_state.strict_mode;
 }
 
+bool process_print_command(const std::vector<std::string> command_vec,
+                           ProgState & prog_state) {
+    prog_state.print_tree(false);
+    return true;
+}
 bool process_out_command(const std::vector<std::string> command_vec,
                          ProgState & prog_state) {
     if (command_vec.size() == 1) {
@@ -129,8 +167,8 @@ bool process_out_command(const std::vector<std::string> command_vec,
 }
 
 bool process_command(const std::vector<std::string> & command_vec,
-                     const MyTaxonNameUniverse & taxa,
-                     const MyTree & tree,
+                     const SimTaxonNameUniverse & taxa,
+                     const SimTree & tree,
                      ProgState & prog_state) {
     if (command_vec.empty()) {
         return true;
@@ -149,6 +187,9 @@ bool process_command(const std::vector<std::string> & command_vec,
     else if (cmd == "OUT") {
         return process_out_command(command_vec, prog_state);
     }
+    else if (cmd == "PRINT") {
+        return process_print_command(command_vec, prog_state);
+    }
     else {
         prog_state.err_stream << "Command \"" << command_vec[0] << "\" is not recognized (use \"QUIT ;\" to exit)\n";
         return !prog_state.strict_mode;
@@ -158,8 +199,8 @@ bool process_command(const std::vector<std::string> & command_vec,
 }
 
 void run_command_interpreter(std::istream & command_stream,
-                             const MyTaxonNameUniverse & taxa,
-                             const MyTree & tree,
+                             const SimTaxonNameUniverse & taxa,
+                             const SimTree & tree,
                              ProgState & prog_state) {
     std::string command;
     bool keep_executing = true;
@@ -177,8 +218,13 @@ void print_help(std::ostream & out) {
     out << "Command line options:\n";
     out << "   -h         this help message\n";
     out << "   -i         interactive mode\n";
-    out << "   -n ####  number of leaves\n";
-    out << "   -s ####  random number seed\n";
+    out << "   -n ####    number of leaves\n";
+    out << "   -s ####    random number seed\n";
+    out << "\n\nIf you enter interactive mode, then commands will be read from standard input.\nThe commands are:\n";
+    out << "   OUTPUT [STD|STOP|FILE fn]   Specifies an output stream\n";
+    out << "   PRINT     Writes the current tree to the output stream (in newick).\n";
+    out << "   QUIT      Quits the program (surprise!)\n";
+    out << "\nCommands must be separated by semicolons !\n";
 }
 
 int main(int argc, char *argv[]) {
@@ -256,8 +302,8 @@ int main(int argc, char *argv[]) {
         std::cerr << "Could not open " << tree_filename << "\n";
         return 2;
     }
-    MyTaxonNameUniverse taxa;
-    const MyTree * tree = nullptr;
+    SimTaxonNameUniverse taxa;
+    SimTree * tree = nullptr;
     try {
         tree = parse_from_newick_stream<blob_t>(inp, taxa);
         if (tree == nullptr) {
@@ -271,7 +317,7 @@ int main(int argc, char *argv[]) {
         return 3;
     }
     
-    ProgState prog_state;
+    ProgState prog_state(*tree);
     prog_state.set_output_stream(&std::cout);
     std::istream & command_stream = std::cin;
     if (interactive) {
