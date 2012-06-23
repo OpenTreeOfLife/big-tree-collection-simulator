@@ -132,6 +132,44 @@ class Node {
         Node<T> * get_parent() {
             return this->_parent;
         }
+        const Node<T> * find_rightmost_child() const {
+            if (this->_left_child == nullptr) {
+                return nullptr;
+            }
+            if (this->_left_child->_right_sib == nullptr) {
+                return this->_left_child;
+            }
+            return this->_left_child->get_rightmost_sib();
+        }
+        const Node<T> * find_left_sib() const {
+            if (this->_parent == nullptr) {
+                return nullptr;
+            }
+            const Node<T> * ls = this->_parent->_left_child;
+            assert(ls);
+            if (ls == this) {
+                return nullptr;
+            }
+            while (ls->_right_sib != this) {
+                assert(ls->_right_sib);
+                ls = ls->_right_sib;
+            }
+            return ls;
+        }
+        
+        // Find the returns the node that is the rightmost child 
+        const Node<T> * find_furthest_right_des() const {
+            const Node<T> * p = this->find_rightmost_child();
+            if (p == nullptr) {
+                return nullptr;
+            }
+            const Node<T> * n = p->find_rightmost_child();
+            while (n != nullptr) {
+                 p = n;
+                 n = p->find_rightmost_child();
+            }
+            return p;
+        }
         Node<T> * get_new_sib(Tree<T> &);
         Node<T> * get_new_left_child(Tree<T> &);
         Node<T> * get_rightmost_sib();
@@ -144,7 +182,64 @@ class Node {
         const T & get_const_blob() const {
             return this->blob;
         }
-
+        class const_postorder_iterator {
+            public:
+                const_postorder_iterator(const Node<T> * nd) {
+                    this->_last_nd = nd;
+                    if (nd) {
+                        this->_curr_nd = nd->find_furthest_right_des();
+                        if (this->_curr_nd == nullptr) {
+                            this->_curr_nd = nd;
+                        }
+                    }
+                    else {
+                        this->_curr_nd = nullptr;
+                    }
+                }
+                const_postorder_iterator(const const_postorder_iterator & other) {
+                    this->_curr_nd = other._curr_nd;
+                    this->_last_nd = other._last_nd;
+                }
+                const Node<T> & operator*() {
+                    return *(this->_curr_nd);
+                }
+                const Node<T> * operator->() {
+                    return &(operator*());
+                }
+                const_postorder_iterator & operator++() {
+                    assert(this->_curr_nd);
+                    if (this->_curr_nd == this->_last_nd) {
+                        this->_curr_nd = nullptr;
+                        return *this;
+                    }
+                    const Node<T> * n = this->_curr_nd->find_left_sib();
+                    if (n == nullptr) {
+                        n = this->_curr_nd->get_parent();
+                        assert(n);
+                    }
+                    else if (n->is_internal()) {
+                        n = n->find_furthest_right_des();
+                    }
+                    this->_curr_nd = n;
+                    return *this;
+                }
+                const_postorder_iterator & operator++(int) {
+                    const_postorder_iterator tmp(*this);
+                    ++(*this);
+                    return tmp;
+                }
+                bool operator==(const const_postorder_iterator & other) const {
+                    return (this->_curr_nd == other._curr_nd);
+                }
+                bool operator!=(const const_postorder_iterator & other) const {
+                    return (this->_curr_nd != other._curr_nd);
+                }
+            private:
+                const Node<T> * _curr_nd;
+                const Node<T> * _last_nd;
+        };
+        
+        
         class const_preorder_iterator {
             public:
                 const_preorder_iterator(const Node<T> * nd) {
@@ -274,6 +369,12 @@ class Node {
         const_preorder_iterator end_preorder() const {
             return const_preorder_iterator(nullptr);
         }        
+        const_postorder_iterator begin_postorder() const {
+            return const_postorder_iterator(this);
+        }        
+        const_postorder_iterator end_postorder() const {
+            return const_postorder_iterator(nullptr);
+        }        
         const_leaf_iterator begin_leaf() const {
             return const_leaf_iterator(this);
         }        
@@ -344,10 +445,16 @@ class Tree {
         }
 
         typename Node_T::const_preorder_iterator begin_preorder() const {
-            return Node_T::const_preorder_iterator(this->_root);
+            return typename Node_T::const_preorder_iterator(this->_root);
         }        
         typename Node_T::const_preorder_iterator end_preorder() const {
-            return Node_T::const_preorder_iterator(nullptr);
+            return typename Node_T::const_preorder_iterator(nullptr);
+        }        
+        typename Node_T::const_postorder_iterator begin_postorder() const {
+            return typename Node_T::const_postorder_iterator(this->_root);
+        }        
+        typename Node_T::const_postorder_iterator end_postorder() const {
+            return typename Node_T::const_postorder_iterator(nullptr);
         }        
 
         typename Node_T::const_leaf_iterator begin_leaf() const {
@@ -679,5 +786,16 @@ Tree<T> * parse_from_newick_stream(std::istream & input, TaxonNameUniverse<T> & 
     }
     return tree;
 }
+
+struct  empty_node_blob_t {
+    public:
+        double edge_length() const {
+            return 0.0;
+        }
+};
+
+typedef Node<empty_node_blob_t> SlimNode;
+typedef Tree<empty_node_blob_t> SlimTree;
+typedef TaxonNameUniverse<empty_node_blob_t> SlimTaxonNameUniverse;
 
 #endif // TREE_TEMPLATE_HPP

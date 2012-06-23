@@ -28,28 +28,22 @@ class RandGen {
         }
         void seed(uint_seed_t x) {
             this->_engine.seed(x);
-            this->_generator = std::bind(this->_u_dist, this->_engine);
+            //this->_generator = std::bind(this->_u_dist, this->_engine);
         }
         rng_float_t operator()(void) {
-            return this->_generator();
+            return this->_u_dist(this->_engine); //this->_generator();
         }
     private:
         std::uniform_real_distribution<rng_float_t> _u_dist;
         std::minstd_rand _engine;
-        std::function<double ()> _generator;
+        //std::function<double ()> _generator;
 };
 ////////////////////////////////////////////////////////////////////////////////
 // Main impl
 ////////////////////
-struct  blob_t {
-    public:
-        double edge_length() const {
-            return 0.0;
-        }
-};
-typedef Node<blob_t> SimNode;
-typedef Tree<blob_t> SimTree;
-typedef TaxonNameUniverse<blob_t> SimTaxonNameUniverse;
+typedef Node<empty_node_blob_t> SimNode;
+typedef Tree<empty_node_blob_t> SimTree;
+typedef TaxonNameUniverse<empty_node_blob_t> SimTaxonNameUniverse;
 
 
 
@@ -325,7 +319,7 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             g_num_taxa_buckets = (unsigned long) 3*n;
-            Tree<blob_t>::set_initial_node_store_size(1.2*n);
+            Tree<empty_node_blob_t>::set_initial_node_store_size(1.2*n);
             prev_flag = '\0';
         }
         else if (prev_flag == 's') {
@@ -381,7 +375,7 @@ int main(int argc, char *argv[]) {
     SimTaxonNameUniverse taxa;
     SimTree * tree = nullptr;
     try {
-        tree = parse_from_newick_stream<blob_t>(inp, taxa);
+        tree = parse_from_newick_stream<empty_node_blob_t>(inp, taxa);
         if (tree == nullptr) {
             std::cerr << "No tree found!\n";
             return 1;
