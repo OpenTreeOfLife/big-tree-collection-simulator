@@ -176,6 +176,10 @@ class Node {
                     else {
                         this->_curr_nd = this->_sib_stack.top();
                         this->_sib_stack.pop();
+                        const Node<T> * ps = this->_curr_nd->get_right_sib();
+                        if (ps) {
+                            this->_sib_stack.push(ps);                            
+                        }
                     }
                     return *this;
                 }
@@ -251,6 +255,10 @@ class Node {
                     else {
                         this->_curr_nd = this->_sib_stack.top();
                         this->_sib_stack.pop();
+                        const Node<T> * ps = this->_curr_nd->get_right_sib();
+                        if (ps) {
+                            this->_sib_stack.push(ps);                            
+                        }
                     }
                     return *this;
                 }

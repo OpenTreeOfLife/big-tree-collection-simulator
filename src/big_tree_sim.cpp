@@ -100,39 +100,7 @@ class ProgState {
 
 
 
-std::vector<std::string> read_command(std::istream & inp) {
-    std::stringbuf str_buf;
-    inp.get(str_buf, ';');
-    std::string x = str_buf.str();
-    if (inp.good()) {
-        inp.get(); // skip the delimiting character
-    }
-    std::vector<std::string> command_vec;
-    if (x.empty()) {
-        return command_vec;
-    }
-    bool in_word = false;
-    unsigned word_start = 0;
-    unsigned i = 0;
-    for (; i < x.length(); ++i) {
-        if (isgraph(x[i])) {
-            if (! in_word) {
-                in_word = true;
-                word_start = i;
-            }
-        }
-        else {
-            if (in_word) {
-                command_vec.push_back(x.substr(word_start, i - word_start));
-            }
-            in_word = false;
-        }
-    }
-    if (in_word) {
-        command_vec.push_back(x.substr(word_start, i - word_start));
-    }
-    return command_vec;
-}
+
 
 std::string capitalize(const std::string & x) {
     std::string cmd = x;
@@ -218,6 +186,48 @@ bool process_command(const std::vector<std::string> & command_vec,
     
 }
 
+std::vector<std::string> parse_command(std::istream & inp) {
+    std::stringbuf str_buf;
+    inp.get(str_buf, ';');
+    std::string x = str_buf.str();
+    if (inp.good()) {
+        inp.get(); // skip the delimiting character
+    }
+    std::vector<std::string> command_vec;
+    if (x.empty()) {
+        return command_vec;
+    }
+    bool in_word = false;
+    unsigned word_start = 0;
+    unsigned i = 0;
+    for (; i < x.length(); ++i) {
+        if (isgraph(x[i])) {
+            if (std::strchr("(),=[]{}<>", x[i]) != nullptr) {
+                if (in_word) {
+                    command_vec.push_back(x.substr(word_start, i - word_start));
+                    in_word = false;
+                }
+                command_vec.push_back(std::string(1, x[i]));
+            }
+            else {
+                if (!in_word) {
+                    in_word = true;
+                    word_start = i;
+                }
+            }
+        }
+        else {
+            if (in_word) {
+                command_vec.push_back(x.substr(word_start, i - word_start));
+            }
+            in_word = false;
+        }
+    }
+    if (in_word) {
+        command_vec.push_back(x.substr(word_start, i - word_start));
+    }
+    return command_vec;
+}
 void run_command_interpreter(std::istream & command_stream,
                              const SimTaxonNameUniverse & taxa,
                              const SimTree & tree,
@@ -225,7 +235,7 @@ void run_command_interpreter(std::istream & command_stream,
     std::string command;
     bool keep_executing = true;
     while (keep_executing && command_stream.good()) {
-        std::vector<std::string> command_vec = read_command(command_stream);
+        std::vector<std::string> command_vec = parse_command(command_stream);
         keep_executing = process_command(command_vec, 
                                          taxa,
                                          tree,
@@ -243,6 +253,7 @@ void print_help(std::ostream & out) {
     out << "\n\nIf you enter interactive mode, then commands will be read from standard input.\nThe commands are:\n";
     out << "   OUTPUT [STD|STOP|FILE fn]   Specifies an output stream\n";
     out << "   PRINT     Writes the current tree to the output stream (in newick).\n";
+    out << "   RESOLVE   Randomly resolves all polytomies in the current tree.\n";
     out << "   QUIT      Quits the program (surprise!)\n";
     out << "\nCommands must be separated by semicolons !\n";
 }
