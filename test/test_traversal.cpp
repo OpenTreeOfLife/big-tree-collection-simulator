@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <set>
 #include <vector>
 #include "tree_template.hpp"
 
@@ -17,7 +18,7 @@ int main(int argc, char * argv[]) {
         std::cerr << "No tree found in " << fn << "\n";
         return 1;
     }
-    std::vector<const SlimNode *> pre_vec, post_vec, leaf_vec;
+    std::vector<const SlimNode *> pre_vec, post_vec, leaf_vec, fast_post_vec;
     SlimNode::const_preorder_iterator it = tree->begin_preorder();
     for (; it != tree->end_preorder(); ++it) {
         pre_vec.push_back(&(*it));
@@ -25,6 +26,10 @@ int main(int argc, char * argv[]) {
     SlimNode::const_postorder_iterator po_it = tree->begin_postorder();
     for (; po_it != tree->end_postorder(); ++po_it) {
         post_vec.push_back(&(*po_it));
+    }
+    SlimNode::const_fast_postorder_iterator fast_post_it = tree->begin_fast_postorder();
+    for (; fast_post_it != tree->end_fast_postorder(); ++fast_post_it) {
+        fast_post_vec.push_back(&(*fast_post_it));
     }
     SlimNode::const_leaf_iterator l_it = tree->begin_leaf();
     for (; l_it != tree->end_leaf(); ++l_it) {
@@ -34,10 +39,16 @@ int main(int argc, char * argv[]) {
         std::cerr << "post_vec.size() == " << post_vec.size() << "\npre_vec.size() == " << pre_vec.size() << '\n';
         return 1;
     }
+    if (post_vec.size() != fast_post_vec.size()) {
+        std::cerr << "post_vec.size() == " << post_vec.size() << "\nfast_post_vec.size() == " << pre_vec.size() << '\n';
+        return 1;
+    }
+    std::set<const SlimNode *> left_seen;
     std::vector<const SlimNode *>::const_iterator pre_it = pre_vec.begin();
     std::vector<const SlimNode *>::const_iterator leaf_it = leaf_vec.begin();
+    std::vector<const SlimNode *>::const_iterator fast_it = fast_post_vec.begin();
     std::vector<const SlimNode *>::const_reverse_iterator pre_rev_it = post_vec.rbegin();
-    for (; pre_it != pre_vec.end(); ++pre_rev_it, ++pre_it) {
+    for (; pre_it != pre_vec.end(); ++pre_rev_it, ++pre_it, ++fast_it) {
         const SlimNode * p = *pre_it;
         if (p->is_leaf()) {
             const SlimNode * pl = *leaf_it++;
@@ -49,6 +60,16 @@ int main(int argc, char * argv[]) {
         const SlimNode * q = *pre_rev_it;
         if (p != q) {
             std::cerr << "p != q\n";
+            return 1;
+        }
+        const SlimNode * n = *fast_it;
+        if (left_seen.find(n) != left_seen.end()) {
+            std::cerr << "repeated node in fast_postorder\n";
+            return 1;
+        }
+        left_seen.insert(n);
+        if (left_seen.find(n->get_parent()) != left_seen.end()) {
+            std::cerr << "parent before child in fast_postorder\n";
             return 1;
         }
     }
