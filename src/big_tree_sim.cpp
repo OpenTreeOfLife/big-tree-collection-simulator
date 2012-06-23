@@ -4,10 +4,40 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
+#include <functional>
 #include <ios>
-#include <config.h>
+#include <random>
 
+#include <config.h>
+////////////////////////////////////////////////////////////////////////////////
+// RNGImpl
+////////////////////
+
+class RandGen {
+    public: 
+        typedef unsigned long uint_seed_t;
+        typedef double rng_float_t;
+        RandGen(uint_seed_t s)
+            :_u_dist(0,1.0) {
+            if (s == 0 || s == std::numeric_limits<uint_seed_t>::max()) {
+                s = (uint_seed_t) time(nullptr);
+            }
+            this->seed(s);
+        }
+        void seed(uint_seed_t x) {
+            this->_engine.seed(x);
+            this->_generator = std::bind(this->_u_dist, this->_engine);
+        }
+        rng_float_t operator()(void) {
+            return this->_generator();
+        }
+    private:
+        std::uniform_real_distribution<rng_float_t> _u_dist;
+        std::minstd_rand _engine;
+        std::function<double ()> _generator;
+};
 ////////////////////////////////////////////////////////////////////////////////
 // Main impl
 ////////////////////
@@ -29,12 +59,14 @@ typedef TaxonNameUniverse<blob_t> SimTaxonNameUniverse;
 ///////
 class ProgState {
     public:
-        ProgState(SimTree & tree)
+        ProgState(SimTree & tree, RandGen::uint_seed_t seed)
             :err_stream(std::cerr), 
             strict_mode(false),
             outp(&std::cout),
             full_tree(tree),
-            current_tree(nullptr) {
+            current_tree(nullptr),
+            last_seed(seed),
+            rng(seed) {
             this->current_tree = &(this->full_tree);
         }
         
@@ -95,6 +127,9 @@ class ProgState {
         std::ofstream outp_obj;
         SimTree & full_tree;
         SimTree * current_tree;
+        RandGen::uint_seed_t last_seed;
+    public:
+        RandGen rng;
         
 };
 
@@ -113,6 +148,11 @@ bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state)
     return !prog_state.strict_mode;
 }
 
+bool process_resolve_command(const std::vector<std::string> command_vec,
+                           ProgState & prog_state) {
+    std::cerr << "Resolve rng => " << prog_state.rng() << "\n";
+    return true;
+}
 bool process_print_command(const std::vector<std::string> command_vec,
                            ProgState & prog_state) {
     bool nexus = false;
@@ -177,6 +217,9 @@ bool process_command(const std::vector<std::string> & command_vec,
     }
     else if (cmd == "PRINT") {
         return process_print_command(command_vec, prog_state);
+    }
+    else if (cmd == "RESOLVE") {
+        return process_resolve_command(command_vec, prog_state);
     }
     else {
         prog_state.err_stream << "Command \"" << command_vec[0] << "\" is not recognized (use \"QUIT ;\" to exit)\n";
@@ -258,6 +301,7 @@ void print_help(std::ostream & out) {
     out << "\nCommands must be separated by semicolons !\n";
 }
 
+
 int main(int argc, char *argv[]) {
     std::ios_base::sync_with_stdio(false);
     if (argc < 2) {
@@ -268,6 +312,7 @@ int main(int argc, char *argv[]) {
     char prev_flag = '\0';
     char * endptr;
     bool interactive = false;
+    RandGen::uint_seed_t seed = 0;
     for (int i = 1; i < argc; ++i) {
         if (prev_flag == 'n') {
             long int n = std::strtol(argv[i], &endptr, 10);
@@ -293,7 +338,7 @@ int main(int argc, char *argv[]) {
                 std::cerr << "Expecting the random number seed to be > 1\n";
                 return 1;
             }
-            
+            seed = (RandGen::uint_seed_t) n; //safe, positivity checked
             prev_flag = '\0';
         }
         else if (prev_flag == '\0') {
@@ -348,7 +393,7 @@ int main(int argc, char *argv[]) {
         return 3;
     }
     
-    ProgState prog_state(*tree);
+    ProgState prog_state(*tree, seed);
     prog_state.set_output_stream(&std::cout);
     std::istream & command_stream = std::cin;
     if (interactive) {
