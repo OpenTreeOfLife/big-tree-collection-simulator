@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <cassert>
+#include <cstring>
 #include <list>
 #include <sstream>
 #include <stack>
@@ -33,8 +34,15 @@ class TaxonLabel {
         const char * c_str() const {
             return this->_label.c_str();
         }
-        const char * newick() const {
-            return this->_label.c_str();
+        std::string newick() const {
+            std::string _newick;
+            if (true) {
+                _newick = this->_create_newick_escaped();
+            }
+            else {
+                _newick = this->_label;
+            }
+            return _newick;
         }
         bool empty() const {
             return this->_label.empty();
@@ -46,6 +54,32 @@ class TaxonLabel {
             return this->_n_added;
         }
     private:
+        std::string _create_newick_escaped() const {
+            bool need_quotes = false;
+            for (auto c : this->_label) {
+                if (std::strchr("\'[(){}\"-]/\\,;:=*`+<> \t\n\r", c) != nullptr) {
+                    need_quotes = true;
+                    break;
+                }
+            }
+            if (need_quotes) {
+                std::string _newick;
+                _newick.reserve(this->_label.length() + 2);
+                _newick = "\'";
+                for (auto c : this->_label) {
+                    if (c == '\'') {
+                        _newick.append(1, '\'');
+                    }
+                    _newick.append(1, c);
+                }
+                _newick.append(1, '\'');
+                return _newick;
+            }
+            else {
+                return this->_label;
+            }
+        }
+
         std::string _label;
         unsigned char _n_added;
             
@@ -151,12 +185,76 @@ class Node {
                     return tmp;
                 }
                 bool operator==(const const_preorder_iterator & other) const {
-                    return this->_curr_nd == other._curr_nd;
+                    return (this->_curr_nd == other._curr_nd);
                 }
                 bool operator!=(const const_preorder_iterator & other) const {
-                    return this->_curr_nd != other._curr_nd;
+                    return (this->_curr_nd != other._curr_nd);
                 }
             private:
+                const Node<T> * _curr_nd;
+                std::stack<const Node<T> *> _sib_stack;
+        };
+
+        class const_leaf_iterator {
+            public:
+                const_leaf_iterator(const Node<T> * nd) {
+                    this->_curr_nd = nd;
+                    while (this->_curr_nd && this->_curr_nd->is_internal()) {
+                        this->_advance();
+                    }
+                }
+                const_leaf_iterator(const const_leaf_iterator & other) {
+                    this->_curr_nd = other._curr_nd;
+                    this->_sib_stack = other._sib_stack;
+                    while (this->_curr_nd && this->_curr_nd->is_internal()) {
+                        this->_advance();
+                    }
+                }
+                const Node<T> & operator*() {
+                    return *(this->_curr_nd);
+                }
+                const Node<T> * operator->() {
+                    return &(operator*());
+                }
+                const_leaf_iterator & operator++() {
+                    this->_advance();
+                    while (this->_curr_nd && this->_curr_nd->is_internal()) {
+                        this->_advance();
+                    }
+                    return *this;
+                }
+                const_leaf_iterator & operator++(int) {
+                    const_leaf_iterator tmp(*this);
+                    ++(*this);
+                    return tmp;
+                }
+                bool operator==(const const_leaf_iterator & other) const {
+                    return (this->_curr_nd == other._curr_nd);
+                }
+                bool operator!=(const const_leaf_iterator & other) const {
+                    return (this->_curr_nd != other._curr_nd);
+                }
+            private:
+                const_leaf_iterator & _advance() {
+                    assert(this->_curr_nd);
+                    const Node<T> * lc = this->_curr_nd->get_left_child();
+                    if (lc) {
+                        const Node<T> * lcrs = lc->get_right_sib();
+                        if (lcrs) {
+                            this->_sib_stack.push(lcrs);
+                        }
+                        this->_curr_nd = lc;
+                    }
+                    else if ( this->_sib_stack.empty()) {
+                        this->_curr_nd = nullptr;
+                    }
+                    else {
+                        this->_curr_nd = this->_sib_stack.top();
+                        this->_sib_stack.pop();
+                    }
+                    return *this;
+                }
+
                 const Node<T> * _curr_nd;
                 std::stack<const Node<T> *> _sib_stack;
         };
@@ -168,9 +266,14 @@ class Node {
         const_preorder_iterator end_preorder() const {
             return const_preorder_iterator(nullptr);
         }        
+        const_leaf_iterator begin_leaf() const {
+            return const_leaf_iterator(this);
+        }        
+        const_leaf_iterator end_leaf() const {
+            return const_leaf_iterator(nullptr);
+        }        
 
         void write_newick(std::ostream &o, bool edge_lengths) const {
-            std::cerr << "in Node::write_newick\n";
             const_preorder_iterator it = this->begin_preorder();
             const_preorder_iterator end_it = this->end_preorder();
             for (; it != end_it; ++it) {
@@ -238,6 +341,14 @@ class Tree {
         typename Node_T::const_preorder_iterator end_preorder() const {
             return Node_T::const_preorder_iterator(nullptr);
         }        
+
+        typename Node_T::const_leaf_iterator begin_leaf() const {
+            return typename Node_T::const_leaf_iterator(this->_root);
+        }        
+        typename Node_T::const_leaf_iterator end_leaf() const {
+            return typename Node_T::const_leaf_iterator(nullptr);
+        }        
+        nnodes_t get_num_leaves() const;
         void write_newick(std::ostream &o, bool edge_lengths) const {
             if (this->_root == nullptr) {
                 return;
@@ -378,6 +489,17 @@ Tree<T>::Tree()
     this->_root = this->get_new_node();
 }
 
+
+template<typename T>
+nnodes_t Tree<T>::get_num_leaves() const  {
+    typename Node<T>::const_leaf_iterator s_it = this->begin_leaf();
+    typename Node<T>::const_leaf_iterator e_it = this->end_leaf();
+    nnodes_t num_nodes = 0;
+    for (; s_it != e_it; ++s_it) {
+        ++num_nodes;
+    }
+    return num_nodes;
+}
 template<typename T>
 void Tree<T>::_replinish_node_store() {
     assert(this->_curr_node_alloc_ptr);

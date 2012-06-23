@@ -17,8 +17,11 @@ struct  blob_t {
             return 0.0;
         }
 };
+typedef Node<blob_t> SimNode;
 typedef Tree<blob_t> SimTree;
 typedef TaxonNameUniverse<blob_t> SimTaxonNameUniverse;
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Wraps up the changeable state of the program (as it runs through the command
@@ -35,11 +38,24 @@ class ProgState {
             this->current_tree = &(this->full_tree);
         }
         
-        void print_tree(bool edge_lengths) const {
+        void print_tree(bool edge_lengths, bool nexus) const {
             if (this->outp != nullptr) {
                 assert(this->current_tree);
+                if (nexus) {
+                    *this->outp << "#NEXUS\nBEGIN TAXA;\n  Dimensions ntax = ";
+                    *this->outp << this->current_tree->get_num_leaves() << ";\n  Taxlabels";
+                    for (SimNode::const_leaf_iterator sn_it = this->current_tree->begin_leaf();
+                        sn_it != this->current_tree->end_leaf();
+                        ++sn_it) {
+                        *this->outp << ' ' << sn_it->get_label().newick();
+                    }
+                *this->outp << ";\nEND;\n\nBEGIN TREES;\n  Tree one = [&R] ";
+                }
                 this->err_stream << "Calling write_newick...\n";
                 this->current_tree->write_newick(*this->outp, edge_lengths);
+                if (nexus) {
+                    *this->outp << "\nEND;";
+                }
                 *this->outp << std::endl;
             }
         }
@@ -131,7 +147,11 @@ bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state)
 
 bool process_print_command(const std::vector<std::string> command_vec,
                            ProgState & prog_state) {
-    prog_state.print_tree(false);
+    bool nexus = false;
+    if (command_vec.size() > 1 && capitalize(command_vec[1]) == "NEXUS") {
+        nexus = true;
+    }
+    prog_state.print_tree(false, nexus);
     return true;
 }
 bool process_out_command(const std::vector<std::string> command_vec,
