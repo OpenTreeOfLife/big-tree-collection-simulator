@@ -30,14 +30,117 @@ class RandGen {
             this->_engine.seed(x);
             //this->_generator = std::bind(this->_u_dist, this->_engine);
         }
+        rng_float_t uniform01(void) {
+            const rng_float_t x = this->_u_dist(this->_engine); //this->_generator();
+#           if ! defined(NDEBUG)
+#               if defined(DEBUGGING_RNG)
+                    std::cerr << "UNIFORMO1 " << x << "\n";
+#               endif
+#           endif
+            return x;
+        }
         rng_float_t operator()(void) {
-            return this->_u_dist(this->_engine); //this->_generator();
+            return this->uniform01();
+        }
+
+        //// Returns a random integer from the range [beg_ind, end_ind)
+        // @ not the greatest algorithm...
+        uint_seed_t rand_range(uint_seed_t beg_ind, uint_seed_t end_ind) {
+            assert(end_ind > beg_ind);
+            const long diff = end_ind - beg_ind;
+            const double real_diff = float(diff);
+            const double rand_offset = real_diff*this->uniform01();
+            const long int_rand_offset(rand_offset);
+            uint_seed_t ret = (beg_ind + int_rand_offset);
+            if (ret >= end_ind) {
+                assert(ret == end_ind);
+                return ret - 1;
+            }
+            return ret;
         }
     private:
         std::uniform_real_distribution<rng_float_t> _u_dist;
         std::minstd_rand _engine;
         //std::function<double ()> _generator;
 };
+
+template<typename T>
+T & choose_element(T * arr, RandGen::uint_seed_t sz, RandGen & rng) {
+    assert(sz > 0);
+    RandGen::uint_seed_t ind = rng.rand_range(0, sz);
+    assert(ind < sz);
+    return arr[ind];
+}
+
+template<typename T>
+T & choose_element(std::vector<T> & vec, RandGen & rng) {
+    assert(!vec.empty());
+    RandGen::uint_seed_t ind = rng.rand_range(0, vec.size());
+    assert(ind < vec.size());
+    std::cerr << "Element " << ind << " chosen.\n";
+    return vec.at(ind);
+}
+////////////////////////////////////////////////////////////////////////////////
+// Tree manipulation impl
+////////////////////
+
+
+/// Resolves each polytomy in the tree with a stepwise addition type procedure.
+// For every polytomy, the specific Node instance of the polytomy will correspond
+//  to the ancestor of the resolved portion.
+// Returns then number nodes added.
+template<typename T>
+nnodes_t resolve_polytomies(Tree<T> & tree, RandGen & rng) {
+    typename Node<T>::fast_postorder_iterator it = tree.begin_fast_postorder();
+    nnodes_t num_nodes_added = 0;
+    std::vector<Node<T> *> attachment_points;
+            
+    tree.debug_check();
+    for (; it != tree.end_fast_postorder(); ++it) {
+        Node<T> & nd = *it;
+        if (nd.is_polytomy()) {
+            tree.debug_check();
+            std::vector<Node<T> *> children = nd.get_children();
+            assert(children.size() > 2);
+            std::cerr << " resolving polytomy with " <<  children.size() << " children\n";
+            children[1]->set_right_sib(nullptr);
+            attachment_points.clear();
+            attachment_points.reserve(children.size());
+            attachment_points.push_back(&nd); 
+            attachment_points.push_back(children[0]); 
+            attachment_points.push_back(children[1]);
+            
+            for (nnodes_t ch_ind = 2; ch_ind < children.size(); ++ch_ind) {
+                Node<T> * child = children[ch_ind];
+                child->set_right_sib(nullptr);
+                Node<T> * new_sib = choose_element(attachment_points, rng);
+                Node<T> * new_connector = tree.get_new_node();
+                ++num_nodes_added;
+                child->set_right_sib(nullptr);
+                if (new_sib == &nd) {
+                    // special handling so that nd remains the deepest node in the resolved polytomy
+                    Node<T> * left_of_base = nd.get_left_child();
+                    assert(left_of_base);
+                    Node<T> * right_of_base = left_of_base->get_right_sib();
+                    assert(right_of_base);
+                    assert(right_of_base->get_right_sib() == nullptr);
+                    left_of_base->set_right_sib(nullptr);
+                    left_of_base->bisect_edge_with_node(new_connector);
+                    left_of_base->set_right_sib(right_of_base);
+                    new_connector->set_right_sib(child);
+                }
+                else {
+                    new_sib->bisect_edge_with_node(new_connector);
+                    new_sib->set_right_sib(child);
+                }
+                attachment_points.push_back(child);
+                attachment_points.push_back(new_connector);
+                tree.debug_check();
+            }
+        }
+    }
+    return num_nodes_added;
+}
 ////////////////////////////////////////////////////////////////////////////////
 // Main impl
 ////////////////////
@@ -116,6 +219,9 @@ class ProgState {
         
         std::ostream & err_stream;
         bool strict_mode;
+        SimTree * get_focal_tree() const {
+            return this->current_tree;
+        }
     private:
         std::ostream * outp;
         std::ofstream outp_obj;
@@ -144,7 +250,9 @@ bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state)
 
 bool process_resolve_command(const std::vector<std::string> command_vec,
                            ProgState & prog_state) {
-    std::cerr << "Resolve rng => " << prog_state.rng() << "\n";
+    SimTree * focal_tree = prog_state.get_focal_tree();
+    assert(focal_tree);
+    resolve_polytomies(*focal_tree, prog_state.rng);
     return true;
 }
 bool process_print_command(const std::vector<std::string> command_vec,

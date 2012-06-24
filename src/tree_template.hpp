@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstring>
 #include <list>
+#include <set>
 #include <sstream>
 #include <stack>
 #include <stdexcept>
@@ -52,6 +53,10 @@ class TaxonLabel {
         }
         unsigned char get_num_char_added() const {
             return this->_n_added;
+        }
+        void clear() {
+            this->_label.clear();
+            this->_n_added = 0;
         }
     private:
         std::string _create_newick_escaped() const {
@@ -108,11 +113,75 @@ class Node {
             _right_sib(nullptr),
             _parent(nullptr) {
         }
+        
+        bool is_polytomy() const {
+            const Node<T> * c = this->_left_child;
+            return (c and c->_right_sib and c->_right_sib->_right_sib);
+        }
+        std::vector<Node *> get_children() {
+            std::vector<Node *> v;
+            Node<T> * c = this->_left_child;
+            while (c) {
+                v.push_back(c);
+                c = c->_right_sib;
+            }
+            return v;
+        }
+        std::vector<const Node *> get_children() const {
+            std::vector<const  Node *> v;
+            const Node<T> * c = this->_left_child;
+            while (c) {
+                v.push_back(c);
+                c = c->_right_sib;
+            }
+            return v;
+        }
+        nnodes_t get_num_children() const {
+            nnodes_t nc = 0;
+            const Node<T> * c = this->_left_child;
+            while (c) {
+                ++nc;
+                c = c->_right_sib;
+            }
+            return nc;
+        }
+        /// introduces `nd` between this and its parent
+        void bisect_edge_with_node(Node<T> * nd) {
+            assert(nd);
+            assert(this);
+            assert(this->_parent);
+            Node<T> * left_sib = this->find_left_sib();
+            if (left_sib == nullptr) {
+                this->_parent->_left_child = nd;
+            }
+            else {
+                left_sib->_right_sib = nd;
+            }
+            nd->_parent = this->_parent;
+            nd->_right_sib = this->_right_sib;
+            this->_right_sib = nullptr;
+            nd->_left_child = this;
+            this->_parent = nd;
+        }
+        /// sets _left_child and _parent fields for a new left child. Does NOT alter previous _left_child Node
+        void set_left_child(Node<T> * c) {
+            this->_left_child = c;
+            if (c) {
+                c->_parent = this;
+            }
+        }
         bool is_leaf() const {
             return (this->_left_child == nullptr);
         }
         bool is_internal() const {
             return (this->_left_child != nullptr);
+        }
+        /// makes `r` the rsib of `this` and sets the parent of `r`
+        void set_right_sib(Node<T> *r) {
+            this->_right_sib = r;
+            if (r != nullptr) {
+                r->_parent = this->_parent;
+            }
         }
         const Node<T> * get_right_sib() const {
             return this->_right_sib;
@@ -141,6 +210,22 @@ class Node {
             }
             return this->_left_child->get_rightmost_sib();
         }
+        Node<T> * find_left_sib(){
+            if (this->_parent == nullptr) {
+                return nullptr;
+            }
+            Node<T> * ls = this->_parent->_left_child;
+            assert(ls);
+            if (ls == this) {
+                return nullptr;
+            }
+            assert(ls->_right_sib);
+            while (ls->_right_sib != this) {
+                assert(ls->_right_sib);
+                ls = ls->_right_sib;
+            }
+            return ls;
+        }
         const Node<T> * find_left_sib() const {
             if (this->_parent == nullptr) {
                 return nullptr;
@@ -158,6 +243,18 @@ class Node {
         }
         
         // Find the returns the node that is the leftmost child of the leftmost child of the leftmost child...
+        Node<T> * find_furthest_left_des() {
+            Node<T> * p = this->get_left_child();
+            if (p == nullptr) {
+                return nullptr;
+            }
+            Node<T> * n = p->get_left_child();
+            while (n != nullptr) {
+                 p = n;
+                 n = p->get_left_child();
+            }
+            return p;
+        }
         const Node<T> * find_furthest_left_des() const {
             const Node<T> * p = this->get_left_child();
             if (p == nullptr) {
@@ -196,6 +293,8 @@ class Node {
         const T & get_const_blob() const {
             return this->blob;
         }
+        
+        
         // children before parents. Reverse of the preorder
         class const_postorder_iterator {
             public:
@@ -310,6 +409,63 @@ class Node {
                 const Node<T> * _curr_nd;
                 const Node<T> * _last_nd;
         };
+        // children before parents. *Not* the reverse of the preorder (left first
+        class fast_postorder_iterator {
+            public:
+                fast_postorder_iterator(Node<T> * nd) {
+                    this->_last_nd = nd;
+                    if (nd) {
+                        this->_curr_nd = nd->find_furthest_left_des();
+                        if (this->_curr_nd == nullptr) {
+                            this->_curr_nd = nd;
+                        }
+                    }
+                    else {
+                        this->_curr_nd = nullptr;
+                    }
+                }
+                fast_postorder_iterator(const fast_postorder_iterator & other) {
+                    this->_curr_nd = other._curr_nd;
+                    this->_last_nd = other._last_nd;
+                }
+                Node<T> & operator*() {
+                    return *(this->_curr_nd);
+                }
+                Node<T> * operator->() {
+                    return &(operator*());
+                }
+                fast_postorder_iterator & operator++() {
+                    assert(this->_curr_nd);
+                    if (this->_curr_nd == this->_last_nd) {
+                        this->_curr_nd = nullptr;
+                        return *this;
+                    }
+                    Node<T> * n = this->_curr_nd->get_right_sib();
+                    if (n == nullptr) {
+                        n = this->_curr_nd->get_parent();
+                        assert(n);
+                    }
+                    else if (n->is_internal()) {
+                        n = n->find_furthest_left_des();
+                    }
+                    this->_curr_nd = n;
+                    return *this;
+                }
+                fast_postorder_iterator & operator++(int) {
+                    fast_postorder_iterator tmp(*this);
+                    ++(*this);
+                    return tmp;
+                }
+                bool operator==(const fast_postorder_iterator & other) const {
+                    return (this->_curr_nd == other._curr_nd);
+                }
+                bool operator!=(const fast_postorder_iterator & other) const {
+                    return (this->_curr_nd != other._curr_nd);
+                }
+            private:
+                Node<T> * _curr_nd;
+                Node<T> * _last_nd;
+        };
         
         
         class const_preorder_iterator {
@@ -345,7 +501,7 @@ class Node {
                         this->_sib_stack.pop();
                         const Node<T> * ps = this->_curr_nd->get_right_sib();
                         if (ps) {
-                            this->_sib_stack.push(ps);                            
+                            this->_sib_stack.push(ps); 
                         }
                     }
                     return *this;
@@ -424,7 +580,7 @@ class Node {
                         this->_sib_stack.pop();
                         const Node<T> * ps = this->_curr_nd->get_right_sib();
                         if (ps) {
-                            this->_sib_stack.push(ps);                            
+                            this->_sib_stack.push(ps); 
                         }
                     }
                     return *this;
@@ -437,28 +593,34 @@ class Node {
 
         const_preorder_iterator begin_preorder() const {
             return const_preorder_iterator(this);
-        }        
+        } 
         const_preorder_iterator end_preorder() const {
             return const_preorder_iterator(nullptr);
-        }        
+        } 
+        fast_postorder_iterator begin_fast_postorder() {
+            return fast_postorder_iterator(this);
+        } 
+        fast_postorder_iterator end_fast_postorder() {
+            return fast_postorder_iterator(nullptr);
+        } 
         const_fast_postorder_iterator begin_fast_postorder() const {
             return const_fast_postorder_iterator(this);
-        }        
+        } 
         const_fast_postorder_iterator end_fast_postorder() const {
             return const_fast_postorder_iterator(nullptr);
-        }        
+        } 
         const_postorder_iterator begin_postorder() const {
             return const_postorder_iterator(this);
-        }        
+        } 
         const_postorder_iterator end_postorder() const {
             return const_postorder_iterator(nullptr);
-        }        
+        } 
         const_leaf_iterator begin_leaf() const {
             return const_leaf_iterator(this);
-        }        
+        } 
         const_leaf_iterator end_leaf() const {
             return const_leaf_iterator(nullptr);
-        }        
+        } 
 
         void write_newick(std::ostream &o, bool edge_lengths) const {
             const_preorder_iterator it = this->begin_preorder();
@@ -495,6 +657,48 @@ class Node {
                 }
             }
         }
+        
+        void clear() {
+            this->_label.clear();
+            this->_left_child = nullptr;
+            this->_right_sib = nullptr;
+            this->_parent = nullptr;
+        }
+    void debug_check_subtree_nav_pointers() const {
+#       if ! defined(NDEBUG)
+            std::stack<const Node<T> *> c_stack;
+            const Node * focal_nd = this;
+            std::set<const Node *> checked;
+            for (;;) {
+                checked.insert(focal_nd);
+                const Node * ls = focal_nd->find_left_sib();
+                if (ls == nullptr) {
+                    assert(focal_nd->_parent == nullptr or focal_nd->_parent->_left_child == focal_nd);
+                }
+                else {
+                    assert(focal_nd == ls->_right_sib);
+                }
+                if (focal_nd->is_internal()) {
+                    typename std::vector<const Node<T> *> v = focal_nd->get_children();
+                    for (typename std::vector<const Node<T> *>::const_iterator i = v.begin(); i != v.end(); ++i) {
+                        if (checked.find(*i) != checked.end()) {
+                            c_stack.push(*i);
+                        }
+                        const Node<T> * c_nd = *i;
+                        assert(c_nd->_parent == focal_nd);
+                    }
+                    focal_nd = v[0];    
+                }
+                else if (!c_stack.empty()) {
+                    focal_nd = c_stack.top();
+                    c_stack.pop();
+                }
+                else {
+                    break;
+                }
+            }
+#       endif
+    }
     private:
         T blob;
         TaxonLabel _label;
@@ -524,29 +728,35 @@ class Tree {
 
         typename Node_T::const_preorder_iterator begin_preorder() const {
             return typename Node_T::const_preorder_iterator(this->_root);
-        }        
+        } 
         typename Node_T::const_preorder_iterator end_preorder() const {
             return typename Node_T::const_preorder_iterator(nullptr);
-        }        
+        } 
+        typename Node_T::fast_postorder_iterator begin_fast_postorder(){
+            return typename Node_T::fast_postorder_iterator(this->_root);
+        } 
+        typename Node_T::fast_postorder_iterator end_fast_postorder() {
+            return typename Node_T::fast_postorder_iterator(nullptr);
+        } 
         typename Node_T::const_fast_postorder_iterator begin_fast_postorder() const {
             return typename Node_T::const_fast_postorder_iterator(this->_root);
-        }        
+        } 
         typename Node_T::const_fast_postorder_iterator end_fast_postorder() const {
             return typename Node_T::const_fast_postorder_iterator(nullptr);
-        }        
+        } 
         typename Node_T::const_postorder_iterator begin_postorder() const {
             return typename Node_T::const_postorder_iterator(this->_root);
-        }        
+        } 
         typename Node_T::const_postorder_iterator end_postorder() const {
             return typename Node_T::const_postorder_iterator(nullptr);
-        }        
+        } 
 
         typename Node_T::const_leaf_iterator begin_leaf() const {
             return typename Node_T::const_leaf_iterator(this->_root);
-        }        
+        } 
         typename Node_T::const_leaf_iterator end_leaf() const {
             return typename Node_T::const_leaf_iterator(nullptr);
-        }        
+        } 
         nnodes_t get_num_leaves() const;
         void write_newick(std::ostream &o, bool edge_lengths) const {
             if (this->_root == nullptr) {
@@ -555,6 +765,11 @@ class Tree {
             this->_root->write_newick(o, edge_lengths);
             o << ";";
         }
+    void debug_check() const {
+#       if ! defined(NDEBUG)
+            this->_root->debug_check_subtree_nav_pointers();
+#       endif
+    }
     private:
         void _replinish_node_store();
 
@@ -690,7 +905,7 @@ Tree<T>::Tree()
 
 
 template<typename T>
-nnodes_t Tree<T>::get_num_leaves() const  {
+nnodes_t Tree<T>::get_num_leaves() const {
     typename Node<T>::const_leaf_iterator s_it = this->begin_leaf();
     typename Node<T>::const_leaf_iterator e_it = this->end_leaf();
     nnodes_t num_nodes = 0;
@@ -720,6 +935,7 @@ Node<T> * Tree<T>::get_new_node() {
         if (! this->_node_cache.empty()) {
             Node_T * nd = this->_node_cache.top();
             this->_node_cache.pop();
+            nd->clear();
             return nd;
         }
         this->_replinish_node_store();
@@ -871,7 +1087,7 @@ Tree<T> * parse_from_newick_stream(std::istream & input, TaxonNameUniverse<T> & 
     return tree;
 }
 
-struct  empty_node_blob_t {
+struct empty_node_blob_t {
     public:
         double edge_length() const {
             return 0.0;
