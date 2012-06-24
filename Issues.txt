@@ -1,0 +1,10 @@
+Tree parsing:
+    Internal labels need to occur after the subtree description:
+        ((A,B)internal,C); not (internal(A,B),C);
+    but the handling of adding quoted labels allows the pre-subtree name:
+        ((A,B)'internal',C); and ('internal'(A,B),C); are both accepted
+    See accepted_internal.newick   accepted_internal2.newick  
+        accepted_internal3.newick  accepted_nointernal.newick and
+        rejected_internal.newick
+    in the test subdir.
+

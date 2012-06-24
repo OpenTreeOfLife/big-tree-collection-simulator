@@ -87,7 +87,7 @@ class TaxonLabel {
 
         std::string _label;
         unsigned char _n_added;
-            
+
 };
 
 template<typename T>
@@ -113,7 +113,7 @@ class Node {
             _right_sib(nullptr),
             _parent(nullptr) {
         }
-        
+
         bool is_polytomy() const {
             const Node<T> * c = this->_left_child;
             return (c and c->_right_sib and c->_right_sib->_right_sib);
@@ -241,7 +241,7 @@ class Node {
             }
             return ls;
         }
-        
+
         // Find the returns the node that is the leftmost child of the leftmost child of the leftmost child...
         Node<T> * find_furthest_left_des() {
             Node<T> * p = this->get_left_child();
@@ -267,7 +267,7 @@ class Node {
             }
             return p;
         }
-        
+
         // Find the returns the node that is the rightmost child of the rightmost child of the rightmost child...
         const Node<T> * find_furthest_right_des() const {
             const Node<T> * p = this->find_rightmost_child();
@@ -293,8 +293,8 @@ class Node {
         const T & get_const_blob() const {
             return this->blob;
         }
-        
-        
+
+
         // children before parents. Reverse of the preorder
         class const_postorder_iterator {
             public:
@@ -466,8 +466,8 @@ class Node {
                 Node<T> * _curr_nd;
                 Node<T> * _last_nd;
         };
-        
-        
+
+
         class const_preorder_iterator {
             public:
                 const_preorder_iterator(const Node<T> * nd) {
@@ -501,7 +501,7 @@ class Node {
                         this->_sib_stack.pop();
                         const Node<T> * ps = this->_curr_nd->get_right_sib();
                         if (ps) {
-                            this->_sib_stack.push(ps); 
+                            this->_sib_stack.push(ps);
                         }
                     }
                     return *this;
@@ -580,7 +580,7 @@ class Node {
                         this->_sib_stack.pop();
                         const Node<T> * ps = this->_curr_nd->get_right_sib();
                         if (ps) {
-                            this->_sib_stack.push(ps); 
+                            this->_sib_stack.push(ps);
                         }
                     }
                     return *this;
@@ -593,34 +593,34 @@ class Node {
 
         const_preorder_iterator begin_preorder() const {
             return const_preorder_iterator(this);
-        } 
+        }
         const_preorder_iterator end_preorder() const {
             return const_preorder_iterator(nullptr);
-        } 
+        }
         fast_postorder_iterator begin_fast_postorder() {
             return fast_postorder_iterator(this);
-        } 
+        }
         fast_postorder_iterator end_fast_postorder() {
             return fast_postorder_iterator(nullptr);
-        } 
+        }
         const_fast_postorder_iterator begin_fast_postorder() const {
             return const_fast_postorder_iterator(this);
-        } 
+        }
         const_fast_postorder_iterator end_fast_postorder() const {
             return const_fast_postorder_iterator(nullptr);
-        } 
+        }
         const_postorder_iterator begin_postorder() const {
             return const_postorder_iterator(this);
-        } 
+        }
         const_postorder_iterator end_postorder() const {
             return const_postorder_iterator(nullptr);
-        } 
+        }
         const_leaf_iterator begin_leaf() const {
             return const_leaf_iterator(this);
-        } 
+        }
         const_leaf_iterator end_leaf() const {
             return const_leaf_iterator(nullptr);
-        } 
+        }
 
         void write_newick(std::ostream &o, bool edge_lengths) const {
             const_preorder_iterator it = this->begin_preorder();
@@ -650,14 +650,14 @@ class Node {
                             c = a;
                             a = a->get_parent();
                         }
-                        if (a and a != this) {
+                        if (a and c->get_right_sib() != nullptr) {
                             o << ',';
                         }
                     }
                 }
             }
         }
-        
+
         void clear() {
             this->_label.clear();
             this->_left_child = nullptr;
@@ -687,7 +687,7 @@ class Node {
                         const Node<T> * c_nd = *i;
                         assert(c_nd->_parent == focal_nd);
                     }
-                    focal_nd = v[0];    
+                    focal_nd = v[0];
                 }
                 else if (!c_stack.empty()) {
                     focal_nd = c_stack.top();
@@ -705,7 +705,7 @@ class Node {
         Node<T> * _left_child;
         Node<T> * _right_sib;
         Node<T> * _parent;
-        
+
         friend class Tree<T>;
 };
 
@@ -728,35 +728,35 @@ class Tree {
 
         typename Node_T::const_preorder_iterator begin_preorder() const {
             return typename Node_T::const_preorder_iterator(this->_root);
-        } 
+        }
         typename Node_T::const_preorder_iterator end_preorder() const {
             return typename Node_T::const_preorder_iterator(nullptr);
-        } 
+        }
         typename Node_T::fast_postorder_iterator begin_fast_postorder(){
             return typename Node_T::fast_postorder_iterator(this->_root);
-        } 
+        }
         typename Node_T::fast_postorder_iterator end_fast_postorder() {
             return typename Node_T::fast_postorder_iterator(nullptr);
-        } 
+        }
         typename Node_T::const_fast_postorder_iterator begin_fast_postorder() const {
             return typename Node_T::const_fast_postorder_iterator(this->_root);
-        } 
+        }
         typename Node_T::const_fast_postorder_iterator end_fast_postorder() const {
             return typename Node_T::const_fast_postorder_iterator(nullptr);
-        } 
+        }
         typename Node_T::const_postorder_iterator begin_postorder() const {
             return typename Node_T::const_postorder_iterator(this->_root);
-        } 
+        }
         typename Node_T::const_postorder_iterator end_postorder() const {
             return typename Node_T::const_postorder_iterator(nullptr);
-        } 
+        }
 
         typename Node_T::const_leaf_iterator begin_leaf() const {
             return typename Node_T::const_leaf_iterator(this->_root);
-        } 
+        }
         typename Node_T::const_leaf_iterator end_leaf() const {
             return typename Node_T::const_leaf_iterator(nullptr);
-        } 
+        }
         nnodes_t get_num_leaves() const;
         void write_newick(std::ostream &o, bool edge_lengths) const {
             if (this->_root == nullptr) {
@@ -797,12 +797,12 @@ class ParseExcept {
         long filepos;
 };
 
-template<typename T> 
+template<typename T>
 TaxonNameUniverse<T>::TaxonNameUniverse()
     :_str2TaxonLabel(g_num_taxa_buckets){
 }
 
-template<typename T> 
+template<typename T>
 inline TaxonLabel TaxonNameUniverse<T>::add_label(const std::string & label, Node<T> * nd, Tree<T> * tree) {
     TaxonLabel tl = this->_register_new_name(label);
     //std::cerr << "Adding label \"" << tl.get_label() << "\"\n";
@@ -814,9 +814,9 @@ inline TaxonLabel TaxonNameUniverse<T>::add_label(const std::string & label, Nod
 }
 
 
-template<typename T> 
+template<typename T>
 inline TaxonLabel TaxonNameUniverse<T>::_register_new_name(const std::string & label) {
-    std::unordered_map<std::string, TaxonLabel>::const_iterator labIt = this->_str2TaxonLabel.find(label); 
+    std::unordered_map<std::string, TaxonLabel>::const_iterator labIt = this->_str2TaxonLabel.find(label);
     if (labIt == this->_str2TaxonLabel.end()) {
         TaxonLabel tl(label, 0);
         this->_str2TaxonLabel[label] = tl;
@@ -829,7 +829,7 @@ inline TaxonLabel TaxonNameUniverse<T>::_register_new_name(const std::string & l
         disambig_label << prefix << "_DUPLICATE" << dup_num++;
         std::string new_label;
         new_label.assign(disambig_label.str());
-        labIt = this->_str2TaxonLabel.find(new_label); 
+        labIt = this->_str2TaxonLabel.find(new_label);
         if (labIt == this->_str2TaxonLabel.end()) {
             TaxonLabel tl(new_label, 0);
             this->_str2TaxonLabel[new_label] = tl;
@@ -838,7 +838,7 @@ inline TaxonLabel TaxonNameUniverse<T>::_register_new_name(const std::string & l
     }
 }
 
-template<typename T> 
+template<typename T>
 inline Node<T> * Node<T>::get_rightmost_sib() {
     Node<T> * sib = this->_right_sib;
     if (sib) {
@@ -1031,6 +1031,8 @@ Tree<T> * parse_from_newick_stream(std::istream & input, TaxonNameUniverse<T> & 
                             label.append(1, q);
                         }
                     }
+                    taxa.add_label(label, curr_node, tree); // handling this here works for typical trees, but it will also not reject internal node names before subtrees.
+                    cache.clear();
                 }
                 else {
                     curr_mode = IN_LABEL;
