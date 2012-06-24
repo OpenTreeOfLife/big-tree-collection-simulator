@@ -16,7 +16,7 @@
 ////////////////////
 
 class RandGen {
-    public: 
+    public:
         typedef unsigned long uint_seed_t;
         typedef double rng_float_t;
         RandGen(uint_seed_t s)
@@ -91,12 +91,12 @@ T & choose_element(std::vector<T> & vec, RandGen & rng) {
 // For every polytomy, the specific Node instance of the polytomy will correspond
 //  to the ancestor of the resolved portion.
 // Returns then number nodes added.
-template<typename T>
-nnodes_t resolve_polytomies(Tree<T> & tree, RandGen & rng) {
+template<typename T, typename U>
+nnodes_t resolve_polytomies(Tree<T, U> & tree, RandGen & rng) {
     typename Node<T>::fast_postorder_iterator it = tree.begin_fast_postorder();
     nnodes_t num_nodes_added = 0;
     std::vector<Node<T> *> attachment_points;
-            
+
     tree.debug_check();
     for (; it != tree.end_fast_postorder(); ++it) {
         Node<T> & nd = *it;
@@ -108,10 +108,10 @@ nnodes_t resolve_polytomies(Tree<T> & tree, RandGen & rng) {
             children[1]->set_right_sib(nullptr);
             attachment_points.clear();
             attachment_points.reserve(children.size());
-            attachment_points.push_back(&nd); 
-            attachment_points.push_back(children[0]); 
+            attachment_points.push_back(&nd);
+            attachment_points.push_back(children[0]);
             attachment_points.push_back(children[1]);
-            
+
             for (nnodes_t ch_ind = 2; ch_ind < children.size(); ++ch_ind) {
                 Node<T> * child = children[ch_ind];
                 child->set_right_sib(nullptr);
@@ -146,9 +146,10 @@ nnodes_t resolve_polytomies(Tree<T> & tree, RandGen & rng) {
 ////////////////////////////////////////////////////////////////////////////////
 // Main impl
 ////////////////////
-typedef Node<empty_node_blob_t> SimNode;
-typedef Tree<empty_node_blob_t> SimTree;
-typedef TaxonNameUniverse<empty_node_blob_t> SimTaxonNameUniverse;
+typedef empty_node_blob_t SimNdBlob;
+typedef empty_tree_blob_t SimTreeBlob;
+typedef Node<SimNdBlob> SimNode;
+typedef Tree<SimNdBlob, SimTreeBlob> SimTree;
 
 
 
@@ -159,7 +160,7 @@ typedef TaxonNameUniverse<empty_node_blob_t> SimTaxonNameUniverse;
 class ProgState {
     public:
         ProgState(SimTree & tree, RandGen::uint_seed_t seed)
-            :err_stream(std::cerr), 
+            :err_stream(std::cerr),
             strict_mode(false),
             outp(&std::cout),
             full_tree(tree),
@@ -168,7 +169,7 @@ class ProgState {
             rng(seed) {
             this->current_tree = &(this->full_tree);
         }
-        
+
         void print_tree(bool edge_lengths, bool nexus) const {
             if (this->outp != nullptr) {
                 assert(this->current_tree);
@@ -190,18 +191,18 @@ class ProgState {
                 *this->outp << std::endl;
             }
         }
-        
+
         std::ostream * get_output_stream() {
             return this->outp;
         }
-        
+
         void set_output_stream( std::ostream * new_out) {
             if (&(this->outp_obj) == this->outp) {
                 this->outp_obj.close();
             }
             this->outp = new_out;
         }
-        
+
         void set_output_file(const char * new_out) {
             if (&(this->outp_obj) == this->outp) {
                 this->outp_obj.close();
@@ -214,11 +215,11 @@ class ProgState {
                 this->outp = 0L;
             }
         }
-        
+
         bool out_good() const {
             return this->outp and this->outp->good();
         }
-        
+
         std::ostream & err_stream;
         bool strict_mode;
         SimTree * get_focal_tree() const {
@@ -232,7 +233,7 @@ class ProgState {
         RandGen::uint_seed_t last_seed;
     public:
         RandGen rng;
-        
+
 };
 
 
@@ -299,13 +300,13 @@ bool process_out_command(const std::vector<std::string> command_vec,
 }
 
 bool process_command(const std::vector<std::string> & command_vec,
-                     const SimTaxonNameUniverse & taxa,
+                     const TaxonNameUniverse & taxa,
                      const SimTree & tree,
                      ProgState & prog_state) {
     if (command_vec.empty()) {
         return true;
     }
-    
+
     prog_state.err_stream << "Command:  ";
     std::string cmd = capitalize(command_vec[0]);
     prog_state.err_stream << cmd << "  \n";
@@ -330,7 +331,7 @@ bool process_command(const std::vector<std::string> & command_vec,
         return !prog_state.strict_mode;
     }
     return true;
-    
+
 }
 
 std::vector<std::string> parse_command(std::istream & inp) {
@@ -376,17 +377,17 @@ std::vector<std::string> parse_command(std::istream & inp) {
     return command_vec;
 }
 void run_command_interpreter(std::istream & command_stream,
-                             const SimTaxonNameUniverse & taxa,
+                             const TaxonNameUniverse & taxa,
                              const SimTree & tree,
                              ProgState & prog_state) {
     std::string command;
     bool keep_executing = true;
     while (keep_executing && command_stream.good()) {
         std::vector<std::string> command_vec = parse_command(command_stream);
-        keep_executing = process_command(command_vec, 
+        keep_executing = process_command(command_vec,
                                          taxa,
                                          tree,
-                                         prog_state);        
+                                         prog_state);
     }
 }
 void print_help(std::ostream & out) {
@@ -429,7 +430,7 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             g_num_taxa_buckets = (unsigned long) 3*n;
-            Tree<empty_node_blob_t>::set_initial_node_store_size(1.2*n);
+            SimTree::set_initial_node_store_size(1.2*n);
             prev_flag = '\0';
         }
         else if (prev_flag == 's') {
@@ -458,7 +459,7 @@ int main(int argc, char *argv[]) {
                 }
                 else if (arg[1] == 'i') {
                     interactive = true;
-                } 
+                }
                 else {
                     prev_flag = arg[1];
                 }
@@ -482,10 +483,12 @@ int main(int argc, char *argv[]) {
         std::cerr << "Could not open " << tree_filename << "\n";
         return 2;
     }
-    SimTaxonNameUniverse taxa;
+    TaxonNameUniverse taxa;
     SimTree * tree = nullptr;
     try {
-        tree = parse_from_newick_stream<empty_node_blob_t>(inp, taxa);
+        SimNdBlob nd_blob;
+        SimTreeBlob tree_blob;
+        tree = parse_from_newick_stream<SimNdBlob, SimTreeBlob>(inp, taxa, nd_blob, tree_blob);
         if (tree == nullptr) {
             std::cerr << "No tree found!\n";
             return 1;
@@ -496,7 +499,7 @@ int main(int argc, char *argv[]) {
         std::cerr << "\nError:  " << x.message << "\nAt line = " << x.fileline << " at column = " << x.filecol << " at pos = " << x.filepos << "\n";
         return 3;
     }
-    
+
     ProgState prog_state(*tree, seed);
     prog_state.set_output_stream(&std::cout);
     std::istream & command_stream = std::cin;
@@ -504,7 +507,7 @@ int main(int argc, char *argv[]) {
         run_command_interpreter(command_stream, taxa, *tree, prog_state);
     }
     prog_state.set_output_file(nullptr);
-    
+
     return 0;
 }
 

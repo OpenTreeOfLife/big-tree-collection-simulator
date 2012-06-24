@@ -12,8 +12,10 @@ int main(int argc, char * argv[]) {
     }
     std::string fn = argv[1];
     std::ifstream inp(fn);
-    SlimTaxonNameUniverse taxa;
-    const SlimTree * tree = parse_from_newick_stream(inp, taxa);
+    TaxonNameUniverse taxa;
+    empty_node_blob_t nd_blob;
+    empty_tree_blob_t tree_blob;
+    const SlimTree * tree = parse_from_newick_stream(inp, taxa, nd_blob, tree_blob);
     if (tree == nullptr) {
         std::cerr << "No tree found in " << fn << "\n";
         return 1;

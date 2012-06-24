@@ -21,7 +21,7 @@ extern nnodes_t g_num_taxa_buckets; // 3* numbere of taxa works well
 extern nnodes_t g_initial_node_store_size;
 
 template<typename T> class Node;
-template<typename T> class Tree;
+template<typename T, typename U> class Tree;
 class TaxonLabel {
     public:
         TaxonLabel()
@@ -90,19 +90,20 @@ class TaxonLabel {
 
 };
 
-template<typename T>
 class TaxonNameUniverse {
     public:
         TaxonNameUniverse();
-        TaxonLabel add_label(const std::string & label, Node<T> * nd, Tree<T> * tree);
         nnodes_t get_num_labels() {
             return this->_str2TaxonLabel.size();
         }
+        TaxonLabel _register_new_name(const std::string & label);
     private:
         std::unordered_map<std::string, TaxonLabel> _str2TaxonLabel;
 
-        TaxonLabel _register_new_name(const std::string & label);
 };
+
+template<typename T, typename U>
+TaxonLabel add_taxon_label(TaxonNameUniverse & taxa, const std::string & label, Node<T> * nd, Tree<T, U> * tree);
 
 template<typename T>
 class Node {
@@ -281,17 +282,12 @@ class Node {
             }
             return p;
         }
-        Node<T> * get_new_sib(Tree<T> &);
-        Node<T> * get_new_left_child(Tree<T> &);
         Node<T> * get_rightmost_sib();
         void set_label(const TaxonLabel & tl) {
             this->_label = tl;
         }
         TaxonLabel get_label() const {
             return this->_label;
-        }
-        const T & get_const_blob() const {
-            return this->blob;
         }
 
 
@@ -634,7 +630,7 @@ class Node {
                 else {
                     o << nd.get_label().newick();
                     if (edge_lengths) {
-                        o << ':' << nd.get_const_blob().edge_length();
+                        o << ':' << nd.blob.edge_length();
                     }
                     if (nd.get_right_sib() != nullptr) {
                         o << ',';
@@ -645,7 +641,7 @@ class Node {
                         while (a and c != this and c->get_right_sib() == nullptr) {
                             o << ')' << a->get_label().newick();
                             if (edge_lengths) {
-                                o << ':' << a->get_const_blob().edge_length();
+                                o << ':' << a->blob.edge_length();
                             }
                             c = a;
                             a = a->get_parent();
@@ -699,17 +695,28 @@ class Node {
             }
 #       endif
     }
+
+    	void set_left_child_raw(Node<T> * n) {
+    		this->_left_child = n;
+    	}
+    	void set_parent_raw(Node<T> * n) {
+    		this->_parent = n;
+    	}
+    	void set_right_sib_raw(Node<T> * n) {
+    		this->_right_sib = n;
+    	}
+
+        mutable T blob;
+
     private:
-        T blob;
         TaxonLabel _label;
         Node<T> * _left_child;
         Node<T> * _right_sib;
         Node<T> * _parent;
 
-        friend class Tree<T>;
 };
 
-template<typename T>
+template<typename T, typename U>
 class Tree {
     public:
         static nnodes_t get_initial_node_store_size();
@@ -718,6 +725,7 @@ class Tree {
         typedef Node<T> Node_T;
 
         Tree();
+
         Node_T * get_root() {
             return this->_root;
         }
@@ -765,11 +773,19 @@ class Tree {
             this->_root->write_newick(o, edge_lengths);
             o << ";";
         }
-    void debug_check() const {
-#       if ! defined(NDEBUG)
-            this->_root->debug_check_subtree_nav_pointers();
-#       endif
-    }
+
+        Node<T> * get_new_sib(Node<T> & old_nd);
+		Node<T> * get_new_left_child(Node<T> & old_nd);
+
+	    void debug_check() const {
+#       	if ! defined(NDEBUG)
+            	this->_root->debug_check_subtree_nav_pointers();
+#       	endif
+    	}
+
+
+        mutable U blob; //
+
     private:
         void _replinish_node_store();
 
@@ -797,14 +813,10 @@ class ParseExcept {
         long filepos;
 };
 
-template<typename T>
-TaxonNameUniverse<T>::TaxonNameUniverse()
-    :_str2TaxonLabel(g_num_taxa_buckets){
-}
 
-template<typename T>
-inline TaxonLabel TaxonNameUniverse<T>::add_label(const std::string & label, Node<T> * nd, Tree<T> * tree) {
-    TaxonLabel tl = this->_register_new_name(label);
+template<typename T, typename U>
+inline TaxonLabel add_taxon_label(TaxonNameUniverse & taxa, const std::string & label, Node<T> * nd, Tree<T, U> * tree) {
+    TaxonLabel tl = taxa._register_new_name(label);
     //std::cerr << "Adding label \"" << tl.get_label() << "\"\n";
     nd->set_label(tl);
     if (tree) {
@@ -813,9 +825,10 @@ inline TaxonLabel TaxonNameUniverse<T>::add_label(const std::string & label, Nod
     return tl;
 }
 
-
-template<typename T>
-inline TaxonLabel TaxonNameUniverse<T>::_register_new_name(const std::string & label) {
+inline TaxonNameUniverse::TaxonNameUniverse()
+    :_str2TaxonLabel(g_num_taxa_buckets){
+}
+inline TaxonLabel TaxonNameUniverse::_register_new_name(const std::string & label) {
     std::unordered_map<std::string, TaxonLabel>::const_iterator labIt = this->_str2TaxonLabel.find(label);
     if (labIt == this->_str2TaxonLabel.end()) {
         TaxonLabel tl(label, 0);
@@ -850,51 +863,51 @@ inline Node<T> * Node<T>::get_rightmost_sib() {
     return nullptr;
 }
 
-template<typename T>
-Node<T> * Node<T>::get_new_sib(Tree<T> & tree) {
-    if (this->_parent == nullptr) {
+template<typename T, typename U>
+Node<T> * Tree<T, U>::get_new_sib(Node<T> & old_nd) {
+    if (old_nd.get_parent() == nullptr) {
         throw std::range_error("root sib requested");
     }
-    Node<T> * nd = tree.get_new_node();
-    nd->_parent = this->_parent;
-    if (this->_right_sib) {
-        Node<T> * sib = this->get_rightmost_sib();
-        sib->_right_sib = nd;
+    Node<T> * nd = this->get_new_node();
+    nd->set_parent_raw(old_nd.get_parent());
+    if (old_nd.get_right_sib()) {
+        Node<T> * sib = old_nd.get_rightmost_sib();
+        sib->set_right_sib_raw(nd);
     }
     else {
-        this->_right_sib = nd;
+        old_nd.set_right_sib_raw(nd);
     }
     return nd;
 }
 
-template<typename T>
-Node<T> * Node<T>::get_new_left_child(Tree<T> & tree) {
-    if (this->_left_child != nullptr) {
+template<typename T, typename U>
+Node<T> * Tree<T, U>::get_new_left_child(Node<T> & old_nd) {
+    if (old_nd.get_left_child() != nullptr) {
         throw std::range_error("new left child requested on internal");
     }
-    Node<T> * nd = tree.get_new_node();
-    nd->_parent = this;
-    this->_left_child = nd;
+    Node<T> * nd = this->get_new_node();
+    nd->set_parent_raw(&old_nd);
+    old_nd.set_left_child_raw(nd);
     return nd;
 }
 
 
 
-template<typename T>
-nnodes_t Tree<T>::get_initial_node_store_size() {
+template<typename T, typename U>
+nnodes_t Tree<T, U>::get_initial_node_store_size() {
     return g_initial_node_store_size;
 }
 
-template<typename T>
-void Tree<T>::set_initial_node_store_size(unsigned long x) {
+template<typename T, typename U>
+void Tree<T, U>::set_initial_node_store_size(unsigned long x) {
     if (x < 1) {
         throw std::range_error("Tree::initial_node_store_size");
     }
    g_initial_node_store_size = x;
 }
 
-template<typename T>
-Tree<T>::Tree()
+template<typename T, typename U>
+Tree<T, U>::Tree()
     :_label2node(g_num_taxa_buckets) {
     this->_node_alloc_storage.push_back(std::vector<Node_T>(Tree::get_initial_node_store_size()));
     this->_curr_node_alloc_ptr = &(*this->_node_alloc_storage.rbegin());
@@ -904,8 +917,8 @@ Tree<T>::Tree()
 }
 
 
-template<typename T>
-nnodes_t Tree<T>::get_num_leaves() const {
+template<typename T, typename U>
+nnodes_t Tree<T, U>::get_num_leaves() const {
     typename Node<T>::const_leaf_iterator s_it = this->begin_leaf();
     typename Node<T>::const_leaf_iterator e_it = this->end_leaf();
     nnodes_t num_nodes = 0;
@@ -914,8 +927,8 @@ nnodes_t Tree<T>::get_num_leaves() const {
     }
     return num_nodes;
 }
-template<typename T>
-void Tree<T>::_replinish_node_store() {
+template<typename T, typename U>
+void Tree<T, U>::_replinish_node_store() {
     assert(this->_curr_node_alloc_ptr);
     nnodes_t last_alloc_size = this->_curr_node_alloc_ptr->size();
     try {
@@ -929,8 +942,8 @@ void Tree<T>::_replinish_node_store() {
     this->_last_ind_in_nap = this->_curr_node_alloc_ptr->size() - 1;
 }
 
-template<typename T>
-Node<T> * Tree<T>::get_new_node() {
+template<typename T, typename U>
+Node<T> * Tree<T, U>::get_new_node() {
     if (this->_curr_place_in_nap == this->_last_ind_in_nap) {
         if (! this->_node_cache.empty()) {
             Node_T * nd = this->_node_cache.top();
@@ -946,8 +959,11 @@ Node<T> * Tree<T>::get_new_node() {
     return &nd;
 }
 
-template<typename T>
-Tree<T> * parse_from_newick_stream(std::istream & input, TaxonNameUniverse<T> & taxa) {
+template<typename T, typename U>
+Tree<T, U> * parse_from_newick_stream(std::istream & input,
+                                      TaxonNameUniverse & taxa,
+                                      const T & nd_blob,
+                                      const U & tree_blob) {
     enum READING_MODE {IN_LABEL, OUT_OF_LABEL, IN_QUOTE};
     READING_MODE curr_mode = OUT_OF_LABEL;
     std::string label;
@@ -959,25 +975,27 @@ Tree<T> * parse_from_newick_stream(std::istream & input, TaxonNameUniverse<T> & 
     const bool preserve_comments = false;
     char prev_control_char = '\0';
     Node<T> * curr_node = nullptr;
-    Tree<T> * tree = new Tree<T>();
+    Tree<T, U> * tree = new Tree<T, U>();
+    tree->blob = tree_blob;
     curr_node = tree->get_root();
     std::streambuf * rdbuf = input.rdbuf();
     for(;;) {
         signed char c = rdbuf->sbumpc(); filepos++; filecol++;
         if (c == ',') {
             if (curr_mode == IN_LABEL and prev_control_char != ':') {
-                taxa.add_label(label, curr_node, tree);
+                add_taxon_label(taxa, label, curr_node, tree);
             }
             else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
                 throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
             }
-            curr_node = curr_node->get_new_sib(*tree);
+            curr_node = tree->get_new_sib(*curr_node);
+            curr_node->blob = nd_blob;
             prev_control_char = c;
             curr_mode = OUT_OF_LABEL;
         }
         else if (c == ')') {
             if (curr_mode == IN_LABEL and prev_control_char != ':') {
-                taxa.add_label(label, curr_node, tree);
+                add_taxon_label(taxa, label, curr_node, tree);
             }
             else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
                 throw ParseExcept("Expecting every leaf to have a label. Found a closed parenthesis.", fileline, filecol, filepos);
@@ -990,13 +1008,14 @@ Tree<T> * parse_from_newick_stream(std::istream & input, TaxonNameUniverse<T> & 
             if (curr_mode == IN_LABEL) {
                 throw ParseExcept("Unexpected ( after taxon label. Expecting labels after clade", fileline, filecol, filepos);
             }
-            curr_node = curr_node->get_new_left_child(*tree);
+            curr_node = tree->get_new_left_child(*curr_node);
+            curr_node->blob = nd_blob;
             prev_control_char = c;
             curr_mode = OUT_OF_LABEL;
         }
         else if (c == ':') {
             if (curr_mode == IN_LABEL and prev_control_char != ':') {
-                taxa.add_label(label, curr_node, tree);
+                add_taxon_label(taxa, label, curr_node, tree);
             }
             prev_control_char = c;
             curr_mode = OUT_OF_LABEL;
@@ -1031,7 +1050,7 @@ Tree<T> * parse_from_newick_stream(std::istream & input, TaxonNameUniverse<T> & 
                             label.append(1, q);
                         }
                     }
-                    taxa.add_label(label, curr_node, tree); // handling this here works for typical trees, but it will also not reject internal node names before subtrees.
+                    add_taxon_label(taxa, label, curr_node, tree); // handling this here works for typical trees, but it will also not reject internal node names before subtrees.
                     cache.clear();
                 }
                 else {
@@ -1095,9 +1114,10 @@ struct empty_node_blob_t {
             return 0.0;
         }
 };
+struct empty_tree_blob_t {
+};
 
 typedef Node<empty_node_blob_t> SlimNode;
-typedef Tree<empty_node_blob_t> SlimTree;
-typedef TaxonNameUniverse<empty_node_blob_t> SlimTaxonNameUniverse;
+typedef Tree<empty_node_blob_t, empty_tree_blob_t> SlimTree;
 
 #endif // TREE_TEMPLATE_HPP
