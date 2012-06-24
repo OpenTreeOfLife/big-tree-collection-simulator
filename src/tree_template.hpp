@@ -97,6 +97,11 @@ class TaxonNameUniverse {
             return this->_str2TaxonLabel.size();
         }
         TaxonLabel _register_new_name(const std::string & label);
+        const TaxonLabel * find_name(const std::string & label) const {
+        	std::unordered_map<std::string, TaxonLabel>::const_iterator it;
+        	it = this->_str2TaxonLabel.find(label);
+        	return (it == this->_str2TaxonLabel.end() ? nullptr : &(it->second));
+        }
     private:
         std::unordered_map<std::string, TaxonLabel> _str2TaxonLabel;
 
@@ -289,6 +294,41 @@ class Node {
         TaxonLabel get_label() const {
             return this->_label;
         }
+
+        // children before parents. Reverse of the preorder
+        class const_child_iterator {
+            public:
+                const_child_iterator(const Node<T> * nd) {
+					this->_curr_nd = (nd ? nd->_left_child : nullptr);
+                }
+                const_child_iterator(const const_child_iterator & other) {
+                    this->_curr_nd = other._curr_nd;
+                }
+                const Node<T> & operator*() {
+                    return *(this->_curr_nd);
+                }
+                const Node<T> * operator->() {
+                    return &(operator*());
+                }
+                const_child_iterator & operator++() {
+                    assert(this->_curr_nd);
+                    this->_curr_nd = this->_curr_nd->_right_sib;
+                    return *this;
+                }
+                const_child_iterator & operator++(int) {
+                    const_child_iterator tmp(*this);
+                    ++(*this);
+                    return tmp;
+                }
+                bool operator==(const const_child_iterator & other) const {
+                    return (this->_curr_nd == other._curr_nd);
+                }
+                bool operator!=(const const_child_iterator & other) const {
+                    return (this->_curr_nd != other._curr_nd);
+                }
+            private:
+                const Node<T> * _curr_nd;
+        };
 
 
         // children before parents. Reverse of the preorder
@@ -586,7 +626,12 @@ class Node {
                 std::stack<const Node<T> *> _sib_stack;
         };
 
-
+		const_child_iterator begin_child() const {
+            return const_child_iterator(this);
+        }
+        const_child_iterator end_child() const {
+            return const_child_iterator(nullptr);
+        }
         const_preorder_iterator begin_preorder() const {
             return const_preorder_iterator(this);
         }
@@ -630,7 +675,7 @@ class Node {
                 else {
                     o << nd.get_label().newick();
                     if (edge_lengths) {
-                        o << ':' << nd.blob.edge_length();
+                        o << ':' << nd.blob.get_edge_length();
                     }
                     if (nd.get_right_sib() != nullptr) {
                         o << ',';
@@ -641,7 +686,7 @@ class Node {
                         while (a and c != this and c->get_right_sib() == nullptr) {
                             o << ')' << a->get_label().newick();
                             if (edge_lengths) {
-                                o << ':' << a->blob.edge_length();
+                                o << ':' << a->blob.get_edge_length();
                             }
                             c = a;
                             a = a->get_parent();
@@ -714,6 +759,8 @@ class Node {
         Node<T> * _right_sib;
         Node<T> * _parent;
 
+		Node<T>(const Node<T> & other); // not defined, not copyable
+		Node<T> & operator=(const Node<T> & other);// not defined, not copyable
 };
 
 template<typename T, typename U>
@@ -730,8 +777,15 @@ class Tree {
             return this->_root;
         }
         Node_T * get_new_node();
-        void register_label2node(const TaxonLabel & tl, Node_T *nd) {
+        void register_label2node(const TaxonLabel & tl, Node_T * nd) {
             this->_label2node[tl.get_label()] = nd;
+        }
+        Node_T * find_node_by_label(const TaxonLabel & tl) const {
+        	auto nd_it = this->_label2node.find(tl.get_label());
+        	if (nd_it == this->_label2node.end()) {
+        		return nullptr;
+        	}
+        	return nd_it->second;
         }
 
         typename Node_T::const_preorder_iterator begin_preorder() const {
@@ -797,6 +851,10 @@ class Tree {
         nnodes_t _curr_place_in_nap;
         nnodes_t _last_ind_in_nap;
         std::unordered_map<std::string, Node_T *> _label2node;
+
+		Tree<T, U>(const Tree<T, U> & other); // not defined, not copyable
+		Tree<T, U> & operator=(const Tree<T, U> & other);// not defined, not copyable
+
 };
 
 class ParseExcept {
@@ -959,6 +1017,9 @@ Node<T> * Tree<T, U>::get_new_node() {
     return &nd;
 }
 
+std::vector<TaxonLabel> parse_labels_from_stream(std::istream & input,
+                                      		     TaxonNameUniverse & taxa);
+
 template<typename T, typename U>
 Tree<T, U> * parse_from_newick_stream(std::istream & input,
                                       TaxonNameUniverse & taxa,
@@ -1110,7 +1171,7 @@ Tree<T, U> * parse_from_newick_stream(std::istream & input,
 
 struct empty_node_blob_t {
     public:
-        double edge_length() const {
+        double get_edge_length() const {
             return 0.0;
         }
 };
