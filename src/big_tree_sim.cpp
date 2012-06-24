@@ -77,7 +77,9 @@ T & choose_element(std::vector<T> & vec, RandGen & rng) {
     assert(!vec.empty());
     RandGen::uint_seed_t ind = rng.rand_range(0, vec.size());
     assert(ind < vec.size());
-    std::cerr << "Element " << ind << " chosen.\n";
+#   if defined(DEBUGGING_RNG)
+        std::cerr << "Element " << ind << " chosen.\n";
+#   endif
     return vec.at(ind);
 }
 ////////////////////////////////////////////////////////////////////////////////
