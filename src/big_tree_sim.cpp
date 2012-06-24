@@ -196,12 +196,12 @@ typedef Tree<SimNdBlob, SimTreeBlob> SimTree;
 template <typename T, typename U>
 void sum_leaf_weights_over_tree(Tree<T,U> & tree) {
 	typedef typename Tree<T,U>::Node_T::fast_postorder_iterator nd_it_t;
-	typedef typename Node<T>::const_child_iterator const_child_it;
+	typedef typename Node<T>::child_iterator child_it;
 	for (nd_it_t it = tree.begin_fast_postorder(); it != tree.end_fast_postorder(); ++it) {
 		Node<T> & nd = *it;
 		if (nd.is_internal()) {
 			double x = 0.0;
-			for (const_child_it c_it = nd.begin_child(); c_it != nd.end_child(); ++c_it) {
+			for (child_it c_it = nd.begin_child(); c_it != nd.end_child(); ++c_it) {
 				x += c_it->blob.get_sum_leaf_weights();
 			}
 			nd.blob.set_sum_leaf_weights(x);
@@ -211,6 +211,35 @@ void sum_leaf_weights_over_tree(Tree<T,U> & tree) {
 	tree.blob.set_sum_leaf_weights(tree.get_root()->blob.get_sum_leaf_weights());
 }
 
+
+
+template <typename T, typename U>
+Node<T> * find_leaf_by_weight_range(Tree<T,U> & tree, double x) {
+	if (tree.blob.get_sum_leaf_weights() < 0.0) {
+		sum_leaf_weights_over_tree(tree);
+	}
+	if (x > tree.blob.get_sum_leaf_weights()) {
+		return nullptr;
+	}
+	Node<T> * curr_nd = tree.get_root();
+	for (;;) {
+		typedef typename Node<T>::child_iterator ch_it;
+		assert(curr_nd->is_internal());
+		for (ch_it c_it = curr_nd->begin_child(); c_it != curr_nd->end_child(); ++c_it) {
+			const double subtree_wt = c_it->blob.get_sum_leaf_weights();
+			if (subtree_wt < x) {
+				x -= subtree_wt;
+			}
+			else {
+				curr_nd = &(*c_it);
+				if (c_it->is_leaf()) {
+					return curr_nd;
+				}
+				break;
+			}
+		}
+	}
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Wraps up the changeable state of the program (as it runs through the command
@@ -283,6 +312,9 @@ class ProgState {
 
 		std::ostream & err_stream;
 		bool strict_mode;
+		SimTree & get_full_tree() const {
+			return this->full_tree;
+		}
 		SimTree * get_focal_tree() const {
 			return this->current_tree;
 		}
@@ -336,6 +368,10 @@ bool process_weight_command(const std::vector<std::string> command_vec,
 		prog_state.err_stream << "Expected a number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
 		return prog_state.strict_mode;
 	}
+	if (wt < 0.0) {
+		prog_state.err_stream << "Expected a non-negative number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
+		return prog_state.strict_mode;
+	}
 
 	std::string fn = command_vec[2];
 	std::ifstream inp(fn);
@@ -344,8 +380,7 @@ bool process_weight_command(const std::vector<std::string> command_vec,
 		return prog_state.strict_mode;
 	}
 	const std::vector<TaxonLabel> labels = parse_labels_from_stream(inp, prog_state.taxa);
-	assert(prog_state.get_focal_tree());
-	SimTree & tree = *(prog_state.get_focal_tree());
+	SimTree & tree = prog_state.get_full_tree();
 	std::vector<TaxonLabel>::const_iterator lab_it = labels.begin();
 	tree.blob.set_sum_leaf_weights(-1);
 	for (; lab_it != labels.end(); ++lab_it) {
@@ -365,14 +400,23 @@ bool process_weight_command(const std::vector<std::string> command_vec,
 	return true;
 }
 
+
 bool process_sample_command(const std::vector<std::string> command_vec,
 						   ProgState & prog_state) {
-	SimTree * focal_tree = prog_state.get_focal_tree();
-	assert(focal_tree);
-	if (focal_tree->blob.get_sum_leaf_weights() < 0.0) {
-		sum_leaf_weights_over_tree(*focal_tree);
+	SimTree & tree = prog_state.get_full_tree();
+	if (tree.blob.get_sum_leaf_weights() < 0.0) {
+		sum_leaf_weights_over_tree(tree);
 	}
-	prog_state.err_stream << "focal_tree->blob.get_sum_leaf_weights() = " << focal_tree->blob.get_sum_leaf_weights() << '\n';
+	const double w = tree.blob.get_sum_leaf_weights();
+	prog_state.err_stream << "tree.blob.get_sum_leaf_weights() = ";
+	prog_state.err_stream.setf(std::ios::fixed);
+	prog_state.err_stream.precision(5);
+	prog_state.err_stream << w << '\n';
+
+
+	double rand_x = prog_state.rng.uniform01() * w;
+	SimNode * leaf_nd = find_leaf_by_weight_range(tree, rand_x);
+	std::cerr << "Chose \"" << leaf_nd->get_label().c_str() << "\"\n";
 	return true;
 }
 

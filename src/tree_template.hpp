@@ -329,6 +329,40 @@ class Node {
             private:
                 const Node<T> * _curr_nd;
         };
+        // children before parents. Reverse of the preorder
+        class child_iterator {
+            public:
+                child_iterator(Node<T> * nd) {
+					this->_curr_nd = (nd ? nd->_left_child : nullptr);
+                }
+                child_iterator(const child_iterator & other) {
+                    this->_curr_nd = other._curr_nd;
+                }
+                Node<T> & operator*() {
+                    return (*(this->_curr_nd));
+                }
+                Node<T> * operator->() {
+                    return &(operator*());
+                }
+                child_iterator & operator++() {
+                    assert(this->_curr_nd);
+                    this->_curr_nd = this->_curr_nd->_right_sib;
+                    return *this;
+                }
+                child_iterator & operator++(int) {
+                    child_iterator tmp(*this);
+                    ++(*this);
+                    return tmp;
+                }
+                bool operator==(const child_iterator & other) const {
+                    return (this->_curr_nd == other._curr_nd);
+                }
+                bool operator!=(const child_iterator & other) const {
+                    return (this->_curr_nd != other._curr_nd);
+                }
+            private:
+                Node<T> * _curr_nd;
+        };
 
 
         // children before parents. Reverse of the preorder
@@ -631,6 +665,12 @@ class Node {
         }
         const_child_iterator end_child() const {
             return const_child_iterator(nullptr);
+        }
+		child_iterator begin_child() {
+            return child_iterator(this);
+        }
+        child_iterator end_child() {
+            return child_iterator(nullptr);
         }
         const_preorder_iterator begin_preorder() const {
             return const_preorder_iterator(this);
