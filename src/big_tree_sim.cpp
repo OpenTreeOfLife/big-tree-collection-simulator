@@ -337,7 +337,7 @@ class ProgState {
 		    if (this->current_tree != &(this->full_tree)) {
 		    	SimTree * t = this->current_tree;
 		    	this->current_tree = 0L;
-		    	delete [] t;
+		    	delete t;
 
 		    }
 		    this->current_tree = create_new_subsampled_tree(src_root,
