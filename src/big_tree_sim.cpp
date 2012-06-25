@@ -269,7 +269,7 @@ const Node<T> * find_leaf_by_weight_range_offsets(const Node <T> & root,
 		return nullptr;
 	}
 	std::string indent = " ";
-	std::cerr << indent <<  "find_leaf_by_weight_range_offsets x = " << x << " root weight = " << root.blob.get_sum_leaf_weights() << " - " << curr_nd_offset << "\n";
+	//std::cerr << indent <<  "find_leaf_by_weight_range_offsets x = " << x << " root weight = " << root.blob.get_sum_leaf_weights() << " - " << curr_nd_offset << "\n";
 	const Node<T> * curr_nd = &root;
 	for (;;) {
 		typedef typename Node<T>::const_child_iterator ch_it;
@@ -279,18 +279,18 @@ const Node<T> * find_leaf_by_weight_range_offsets(const Node <T> & root,
 		for (ch_it c_it = curr_nd->begin_child(); c_it != curr_nd->end_child(); ++c_it) {
 			const double subtree_wt = c_it->blob.get_sum_leaf_weights();
 			const double subtree_offset = get_or_def_const(wt_offset, &(*c_it), 0.0);
-			std::cerr << indent <<  "before x = " << x << " subtree_wt = " << subtree_wt << " - " << subtree_wt << "\n";
+			//std::cerr << indent <<  "before x = " << x << " subtree_wt = " << subtree_wt << " - " << subtree_wt << "\n";
 			if (subtree_offset < subtree_wt) {
 				const double corrected_wt = subtree_wt - subtree_offset;
 				if (corrected_wt < x) {
 					x -= corrected_wt;
-					std::cerr << indent <<  "decremented x => " << x << "\n";
+					//std::cerr << indent <<  "decremented x => " << x << "\n";
 				}
 				else {
 					curr_nd = &(*c_it);
-					std::cerr << indent <<  "chose nd curr_nd =" << curr_nd << "\n";
+					//std::cerr << indent <<  "chose nd curr_nd =" << curr_nd << "\n";
 					if (c_it->is_leaf()) {
-						std::cerr << indent <<  "It is a leaf!\n";
+						//std::cerr << indent <<  "It is a leaf!\n";
 						return curr_nd;
 					}
 					break;
@@ -328,7 +328,8 @@ class ProgState {
 			full_tree(tree),
 			current_tree(nullptr),
 			last_seed(seed),
-			rng(seed) {
+			rng(seed),
+			verbose(false) {
 			this->current_tree = &(this->full_tree);
 		}
 		void sample_new_focal(const SimNode * src_root,
@@ -361,7 +362,7 @@ class ProgState {
 					}
 				*this->outp << ";\nEND;\n\nBEGIN TREES;\n  Tree one = [&R] ";
 				}
-				this->err_stream << "Calling write_newick...\n";
+				//this->err_stream << "Calling write_newick...\n";
 				this->current_tree->write_newick(*this->outp, edge_lengths);
 				if (nexus) {
 					*this->outp << "\nEND;";
@@ -424,6 +425,7 @@ class ProgState {
 		RandGen rng;
 		SimNdBlob nd_blob;
 		SimTreeBlob tree_blob;
+		bool verbose;
 
 		ProgState(const ProgState & other); // not defined, not copyable
 		ProgState & operator=(const ProgState & other);// not defined, not copyable
@@ -505,19 +507,19 @@ bool process_end_repeat_command(const ProgCommand & command_vec,
 
 	while (end_ind > 1) {
 		end_ind = (*prog_state.repeat_count_vec.rbegin()) - 1;
-		std::cerr << "process_end_repeat_command loop end_ind = " << end_ind <<'\n';
+		//std::cerr << "process_end_repeat_command loop end_ind = " << end_ind <<'\n';
 		if (end_ind > 1) {
 			*prog_state.repeat_count_vec.rbegin() = end_ind;
 			prog_state.curr_repeat_list->first = false;
 			std::list<ProgCommand> to_repeat = prog_state.curr_repeat_list->second;
 			// we repeat the loop that we are currently in. This could be recursive if loops are nested
 			for (unsigned i = 0; i < end_ind; ++i) {
-				std::cerr << "About to repeat: {\n";
+				//std::cerr << "About to repeat: {\n";
 				for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
 					const ProgCommand & cmd = *c_it;
-					std::cerr << "  " << cmd[0] << '\n';
+					//std::cerr << "  " << cmd[0] << '\n';
 				}
-				std::cerr << " }\n";
+				//std::cerr << " }\n";
 
 				for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
 					const ProgCommand & cmd = *c_it;
@@ -590,8 +592,8 @@ std::pair<bool, long> parse_pos_int(ProgState & prog_state,
 									const ProgCommand & command_vec,
 									const char * arg_name) {
 	std::pair<bool, long> r(false, 0L);
-	if (arg_ind + 2 < command_vec.size() or command_vec[1 + arg_ind] != "=") {
-		prog_state.err_stream << "Expecting  = # after ROOTMIN\n";
+	if (arg_ind + 2 >= command_vec.size() or command_vec[1 + arg_ind] != "=") {
+		prog_state.err_stream << "Expecting  = # after " << arg_name << "\n";
 		return r;
 	}
 	char * end_ptr;
@@ -632,7 +634,7 @@ bool sample_leaves_and_traversed(const SimNode & root,
 	if (num_leaves == 0) {
 		return true;
 	}
-	std::cerr << " Sampling ="<< num_leaves << " leaves from a clade of " << root.blob.get_num_leaves_below() << " leaves\n";
+	//std::cerr << " Sampling ="<< num_leaves << " leaves from a clade of " << root.blob.get_num_leaves_below() << " leaves\n";
 	std::unordered_map<const SimNode *, double> weight_offset;
 	nnodes_t num_added = 0;
 	std::list<const SimNode *> path_to_anc;
@@ -640,18 +642,18 @@ bool sample_leaves_and_traversed(const SimNode & root,
 	typedef std::back_insert_iterator<std::list<const SimNode *> > back_it_t;
 
 	if (avoid_node) {
-		std::cerr << " Avoiding a clade of "<< avoid_node->blob.get_num_leaves_below() << " leaves.\n";
+		//std::cerr << " Avoiding a clade of "<< avoid_node->blob.get_num_leaves_below() << " leaves.\n";
 		back_it_t back_i = back_inserter(path_to_anc);
 		if (!avoid_node->put_path_to_anc(&root, back_i)) {
 			assert(false);
-			std::cerr << "Ancestor of avoid_node node not found!\n";
+			//std::cerr << "Ancestor of avoid_node node not found!\n";
 			return false;
 		}
 		const double wt = avoid_node->blob.get_sum_leaf_weights();
 		for (p2a_it = path_to_anc.begin(); p2a_it != path_to_anc.end(); ++p2a_it) {
 			const SimNode * nd_ptr2 = *p2a_it;
 			weight_offset[nd_ptr2] += wt;
-			std::cerr << "   weight="<< nd_ptr2->blob.get_sum_leaf_weights() << " offset[" << nd_ptr2 << "] = " << weight_offset[nd_ptr2] << "\n";
+			//std::cerr << "   weight="<< nd_ptr2->blob.get_sum_leaf_weights() << " offset[" << nd_ptr2 << "] = " << weight_offset[nd_ptr2] << "\n";
 		}
 	}
 
@@ -660,7 +662,7 @@ bool sample_leaves_and_traversed(const SimNode & root,
 		back_it_t back_i = back_inserter(path_to_anc);
 		if (!to_include->put_path_to_anc(&root, back_i)) {
 			assert(false);
-			std::cerr << "Ancestor of leaf node not found!\n";
+			//std::cerr << "Ancestor of leaf node not found!\n";
 			return false;
 		}
 		++num_added;
@@ -675,16 +677,16 @@ bool sample_leaves_and_traversed(const SimNode & root,
 				traversed->insert(nd_ptr2);
 			}
 			weight_offset[nd_ptr2] += wt;
-			std::cerr << "   weight="<< nd_ptr2->blob.get_sum_leaf_weights() << " offset[" << nd_ptr2 << "] = " << weight_offset[nd_ptr2] << "\n";
+			//std::cerr << "   weight="<< nd_ptr2->blob.get_sum_leaf_weights() << " offset[" << nd_ptr2 << "] = " << weight_offset[nd_ptr2] << "\n";
 		}
-		std::cerr << "  Orig leaf added\n";
+		//std::cerr << "  Orig leaf added\n";
 	}
 
 	while (num_added < num_leaves) {
-		std::cerr << "  Adding leaf " << 1 + num_added << "\n";
+		//std::cerr << "  Adding leaf " << 1 + num_added << "\n";
 		double u = rng.uniform01();
 		double x = u * (root.blob.get_sum_leaf_weights() - weight_offset[&root]);
-		std::cerr << "  u="<< u << " root.weight=" << root.blob.get_sum_leaf_weights() << " root offset=" << weight_offset[&root] << " x=" << x <<  "\n";
+		//std::cerr << "  u="<< u << " root.weight=" << root.blob.get_sum_leaf_weights() << " root offset=" << weight_offset[&root] << " x=" << x <<  "\n";
 		const SimNode * next_leaf = nullptr;
 		for (unsigned trial = 0; next_leaf == nullptr and trial < prog_state.max_tries; ++trial) {
 			next_leaf = find_leaf_by_weight_range_offsets(root,
@@ -699,7 +701,7 @@ bool sample_leaves_and_traversed(const SimNode & root,
 		back_it_t back_i = back_inserter(path_to_anc);
 		if (!next_leaf->put_path_to_anc(&root, back_i)) {
 			assert(false);
-			std::cerr << "Ancestor of rand leaf node not found!\n";
+			//std::cerr << "Ancestor of rand leaf node not found!\n";
 			return false;
 		}
 		++num_added;
@@ -732,15 +734,15 @@ bool do_sample(ProgState & prog_state,
 		sum_leaf_weights_over_tree(tree);
 	}
 	const double w = tree.blob.get_sum_leaf_weights();
-	prog_state.err_stream << "tree.blob.get_sum_leaf_weights() = ";
-	prog_state.err_stream.setf(std::ios::fixed);
-	prog_state.err_stream.precision(5);
-	prog_state.err_stream << w << '\n';
-	prog_state.err_stream << "tree.blob.get_num_leaves_below() = ";
-	prog_state.err_stream << tree.get_root()->blob.get_num_leaves_below() << '\n';
-	prog_state.err_stream << "Will try to sample: root depth ["<< arg_root_min << ", " << arg_root_max << "]\n";
-	prog_state.err_stream << "                    ingroup    ["<< in_min << ", " << arg_in_max << "]\n";
-	prog_state.err_stream << "                    outgroup   ["<< out_min << ", " << arg_out_max << "]\n";
+	// prog_state.err_stream << "tree.blob.get_sum_leaf_weights() = ";
+// 	prog_state.err_stream.setf(std::ios::fixed);
+// 	prog_state.err_stream.precision(5);
+// 	prog_state.err_stream << w << '\n';
+// 	prog_state.err_stream << "tree.blob.get_num_leaves_below() = ";
+// 	prog_state.err_stream << tree.get_root()->blob.get_num_leaves_below() << '\n';
+// 	prog_state.err_stream << "Will try to sample: root depth ["<< arg_root_min << ", " << arg_root_max << "]\n";
+// 	prog_state.err_stream << "                    ingroup    ["<< in_min << ", " << arg_in_max << "]\n";
+// 	prog_state.err_stream << "                    outgroup   ["<< out_min << ", " << arg_out_max << "]\n";
 
 	for (unsigned trial = 0; trial < prog_state.max_tries; ++trial) {
 		if (trial > 0) {
@@ -749,7 +751,7 @@ bool do_sample(ProgState & prog_state,
 		// Step 1: Choose a leaf (using the leaf weighting)
 		double rand_x = prog_state.rng.uniform01() * w;
 		const SimNode * leaf_nd = find_leaf_by_weight_range(tree, rand_x);
-		prog_state.err_stream << "Chose \"" << leaf_nd->get_label().c_str() << "\"\n";
+		//prog_state.err_stream << "Chose \"" << leaf_nd->get_label().c_str() << "\"\n";
 		unsigned root_depth, ingroup_size, outgroup_size;
 		unsigned root_min = arg_root_min;
 		unsigned root_max = arg_root_max;
@@ -768,7 +770,9 @@ bool do_sample(ProgState & prog_state,
 			if (ingroup_root == nullptr or ingroup_root->get_parent() == nullptr) { // reached the root of the tree in the ingroup
 				ingroup_root = nullptr;
 				root_max = x - 1;
-				prog_state.err_stream << "  Cropping root depth ["<< root_min << ", " << root_max << "]\n";
+				if (prog_state.verbose) {
+					prog_state.err_stream << "  Cropping root depth ["<< root_min << ", " << root_max << "]\n";
+				}
 				if (root_max < root_min) {
 					break;
 				}
@@ -778,8 +782,9 @@ bool do_sample(ProgState & prog_state,
 				if (potential_ingroup < in_min) { // not enough leaves at this depth, increase the min depth
 					ingroup_root = nullptr;
 					root_min = root_depth + 1;
-					prog_state.err_stream << "  Bumping up root_min ["<< root_min << ", " << root_max << "]\n";
-
+					if (prog_state.verbose) {
+						prog_state.err_stream << "  Bumping up root_min ["<< root_min << ", " << root_max << "]\n";
+					}
 					if (root_max < root_min) {
 						break;
 					}
@@ -799,7 +804,7 @@ bool do_sample(ProgState & prog_state,
 		const nnodes_t num_below_sr = sample_root->blob.get_num_leaves_below();
 		const nnodes_t num_possible_ingroup = ingroup_root->blob.get_num_leaves_below();
 		const nnodes_t num_possible_outgroup = num_below_sr - num_possible_ingroup;
-		prog_state.err_stream << " sample_root found num_possible_ingroup="<< num_possible_ingroup << ", num_below_sr=" << num_below_sr << "\n";
+		//prog_state.err_stream << " sample_root found num_possible_ingroup="<< num_possible_ingroup << ", num_below_sr=" << num_below_sr << "\n";
 		std::set<const SimNode *> leaf_nodes;
 		std::set<const SimNode *> traversed_internals_nodes;
 		assert(num_possible_ingroup >= in_min);
@@ -840,16 +845,16 @@ bool do_sample(ProgState & prog_state,
 			continue;
 		}
 
-		std::cerr << "Full Tree\n";
-		sample_root->debug_dump(std::cerr, true);
-		std::cerr << "Leaves\n";
-		for (auto nd_it : leaf_nodes) {
-			nd_it->debug_dump(std::cerr, true);
-		}
-		std::cerr << "traversed_internals_nodes:\n";
-		for (auto nd_it : traversed_internals_nodes) {
-			nd_it->debug_dump(std::cerr, false);
-		}
+		//std::cerr << "Full Tree\n";
+		//sample_root->debug_dump(std::cerr, true);
+		//std::cerr << "Leaves\n";
+		//for (auto nd_it : leaf_nodes) {
+		//	nd_it->debug_dump(std::cerr, true);
+		//}
+		//std::cerr << "traversed_internals_nodes:\n";
+		//for (auto nd_it : traversed_internals_nodes) {
+		//	nd_it->debug_dump(std::cerr, false);
+		//}
 		prog_state.sample_new_focal(sample_root, leaf_nodes, traversed_internals_nodes);
 		if (prog_state.get_focal_tree()) {
 			return true;
@@ -879,6 +884,7 @@ bool process_sample_command(const ProgCommand & command_vec,
 				return !prog_state.strict_mode;
 			}
 			root_min = r.second;
+			arg_ind += 2;
 		}
 		else if (cap == "ROOTMAX") {
 			r = parse_pos_int(prog_state, arg_ind, command_vec, "ROOTMAX");
@@ -886,6 +892,7 @@ bool process_sample_command(const ProgCommand & command_vec,
 				return !prog_state.strict_mode;
 			}
 			root_max = r.second;
+			arg_ind += 2;
 		}
 		else if (cap == "INMIN") {
 			r = parse_pos_int(prog_state, arg_ind, command_vec, "INMIN");
@@ -893,6 +900,7 @@ bool process_sample_command(const ProgCommand & command_vec,
 				return !prog_state.strict_mode;
 			}
 			in_min = r.second;
+			arg_ind += 2;
 		}
 		else if (cap == "INMAX") {
 			r = parse_pos_int(prog_state, arg_ind, command_vec, "INMAX");
@@ -900,6 +908,7 @@ bool process_sample_command(const ProgCommand & command_vec,
 				return !prog_state.strict_mode;
 			}
 			in_max = r.second;
+			arg_ind += 2;
 		}
 		else if (cap == "OUTMIN") {
 			r = parse_pos_int(prog_state, arg_ind, command_vec, "OUTMIN");
@@ -907,6 +916,7 @@ bool process_sample_command(const ProgCommand & command_vec,
 				return !prog_state.strict_mode;
 			}
 			out_min = r.second;
+			arg_ind += 2;
 		}
 		else if (cap == "OUTMAX") {
 			r = parse_pos_int(prog_state, arg_ind, command_vec, "OUTMAX");
@@ -914,6 +924,7 @@ bool process_sample_command(const ProgCommand & command_vec,
 				return !prog_state.strict_mode;
 			}
 			out_max = r.second;
+			arg_ind += 2;
 		}
 		else {
 			return !prog_state.strict_mode;
@@ -986,13 +997,13 @@ bool process_command(const ProgCommand & command_vec,
 		return true;
 	}
 
-	prog_state.err_stream << "Command:	";
+	//prog_state.err_stream << "Command:	";
 	std::string cmd = capitalize(command_vec[0]);
-	prog_state.err_stream << cmd << "  \n";
-	for (const std::string & word : command_vec) {
-		prog_state.err_stream << '"' << word << "\" ";
-	}
-	prog_state.err_stream << "\n";
+	//prog_state.err_stream << cmd << "  \n";
+	//for (const std::string & word : command_vec) {
+	//		prog_state.err_stream << '"' << word << "\" ";
+	//}
+	//prog_state.err_stream << "\n";
 	if (cmd == "QUIT") {
 		return false;
 	}

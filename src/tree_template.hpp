@@ -780,10 +780,10 @@ class Node {
 		void copy_other_data(const Node<T> & other) {
 			this->blob = other.blob;
 			this->_label = other._label;
-			std::cerr << " In copy_other_data ";
-			this->debug_dump(std::cerr, false);
-			std::cerr << " from ";
-			other.debug_dump(std::cerr, false);
+			//std::cerr << " In copy_other_data ";
+			//this->debug_dump(std::cerr, false);
+			//std::cerr << " from ";
+			//other.debug_dump(std::cerr, false);
 		}
 	void debug_check_subtree_nav_pointers() const {
 #		if ! defined(NDEBUG)
@@ -1311,7 +1311,7 @@ Tree<T, U> * create_new_subsampled_tree(const Node<T> *src_root,
 		typename std::stack<const Node<T> *> internals_stack;
 		typename std::unordered_map<const Node<T> *, Node<T> *> src2dest(3*num_nodes_in_src_subtree);
 		src2dest[curr_src_node] = curr_dest_node;
-		std::cerr << "     Mapping " << curr_src_node << "  to  " << curr_dest_node << "\n";
+		//std::cerr << "     Mapping " << curr_src_node << "  to  " << curr_dest_node << "\n";
 
 		for (;;) {
 			nodes_to_copy.clear();
@@ -1336,12 +1336,12 @@ Tree<T, U> * create_new_subsampled_tree(const Node<T> *src_root,
 				else {
 					curr_dest_node = src2dest[curr_src_node->get_parent()];
 					Node <T> * nn = tree->get_new_child(*curr_dest_node);
-					std::cerr << "     Adding " << nn << "  (for " << curr_src_node << ") to  " << curr_dest_node << "\n";
+					//std::cerr << "     Adding " << nn << "  (for " << curr_src_node << ") to  " << curr_dest_node << "\n";
 					assert(nn);
 					nn->blob = nd_blob;
 					nn->copy_other_data(*curr_src_node);
 					src2dest[curr_src_node] = nn;
-					std::cerr << "     Mapping " << curr_src_node << "  to  " << nn << "\n";
+					//std::cerr << "     Mapping " << curr_src_node << "  to  " << nn << "\n";
 					curr_dest_node = nn;
 				}
 				assert(curr_dest_node);
@@ -1352,7 +1352,7 @@ Tree<T, U> * create_new_subsampled_tree(const Node<T> *src_root,
 					}
 					else {
 						Node <T> * nn = tree->get_new_child(*curr_dest_node);
-						std::cerr << "     Adding " << nn << "  (for " << nd << ") to  " << curr_dest_node << "\n";
+						//std::cerr << "     Adding " << nn << "  (for " << nd << ") to  " << curr_dest_node << "\n";
 						assert(nn);
 						nn->blob = nd_blob;
 						nn->copy_other_data(*nd);
@@ -1369,11 +1369,11 @@ Tree<T, U> * create_new_subsampled_tree(const Node<T> *src_root,
 					assert(curr_src_node->get_parent());
 					internals_stack.push(nd);
 					src2dest[curr_src_node] = curr_dest_node; // map an outdegree 1 node to its parent's clone
-					std::cerr << "     Mapping " << nd << "  to  " << curr_dest_node << "\n";
+					//std::cerr << "     Mapping " << nd << "  to  " << curr_dest_node << "\n";
 				}
 				else {
 					Node <T> * nn = tree->get_new_child(*curr_dest_node);
-					std::cerr << "     Adding " << nn << "  (for " << nd << ") to  " << curr_dest_node << "\n";
+					//std::cerr << "     Adding " << nn << "  (for " << nd << ") to  " << curr_dest_node << "\n";
 					assert(nn);
 					nn->blob = nd_blob;
 					nn->copy_other_data(*nd);
