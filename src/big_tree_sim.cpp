@@ -241,6 +241,12 @@ Node<T> * find_leaf_by_weight_range(Tree<T,U> & tree, double x) {
 	}
 }
 
+typedef std::vector<std::string> ProgCommand;
+class ProgState;
+bool rec_and_process_command(const ProgCommand & command_vec,
+					 		 ProgState & prog_state,
+					 		 bool record);
+
 ////////////////////////////////////////////////////////////////////////////////
 // Wraps up the changeable state of the program (as it runs through the command
 //	line execution.
@@ -252,6 +258,7 @@ class ProgState {
 			:err_stream(std::cerr),
 			strict_mode(false),
 			taxa(taxa_universe),
+			curr_repeat_list(0L),
 			outp(&std::cout),
 			full_tree(tree),
 			current_tree(nullptr),
@@ -319,6 +326,11 @@ class ProgState {
 			return this->current_tree;
 		}
 		TaxonNameUniverse & taxa;
+		std::vector<unsigned> repeat_count_vec;
+		typedef std::pair<bool, std::list<ProgCommand> > cmd_recorder_t;
+		cmd_recorder_t scratch_repeat_list;
+		cmd_recorder_t *curr_repeat_list;
+		std::list<cmd_recorder_t> command_list_list;
 	private:
 		std::ostream * outp;
 		std::ofstream outp_obj;
@@ -347,7 +359,8 @@ bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state)
 	return !prog_state.strict_mode;
 }
 
-bool process_resolve_command(const std::vector<std::string> ,
+
+bool process_resolve_command(const ProgCommand & ,
 						   ProgState & prog_state) {
 	SimTree * focal_tree = prog_state.get_focal_tree();
 	assert(focal_tree);
@@ -355,7 +368,94 @@ bool process_resolve_command(const std::vector<std::string> ,
 	return true;
 }
 
-bool process_weight_command(const std::vector<std::string> command_vec,
+bool process_repeat_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	if (command_vec.size() != 2) {
+		std::cerr << "Expected \"REPEAT #### ;\" where ### is an integer\n";
+		return prog_state.strict_mode;
+	}
+	if (prog_state.curr_repeat_list) {
+		std::cerr << "Expected \"REPEAT\" commands cannot be nested! (in the current implementation)\n";
+		return false;
+	}
+	std::string count_str = command_vec[1];
+	char * e;
+	long count = std::strtol(count_str.c_str(), &e, 10);
+	if (e != count_str.c_str() + count_str.length()) {
+		prog_state.err_stream << "Expected a number (the weight) after the REPEAT command. found " << count_str << ".\n";
+		return prog_state.strict_mode;
+	}
+	if (count < 1) {
+		prog_state.err_stream << "Expected a positive number (the weight) after the REPEAT command. found " << count_str << ".\n";
+		return prog_state.strict_mode;
+	}
+	prog_state.repeat_count_vec.push_back((unsigned) count);
+	if (prog_state.curr_repeat_list) {
+		prog_state.command_list_list.push_back(*prog_state.curr_repeat_list);
+		prog_state.curr_repeat_list->second.clear();
+		prog_state.curr_repeat_list->first = true;
+	}
+	else {
+		prog_state.curr_repeat_list = &(prog_state.scratch_repeat_list);
+		prog_state.curr_repeat_list->second.clear();
+		prog_state.curr_repeat_list->first = true;
+	}
+	return true;
+}
+
+
+bool process_end_repeat_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	if (command_vec.size() != 1) {
+		std::cerr << "Expected no arguments after \"ENDREPEAT ;\" found \"" <<command_vec.at(1) << "\"\n";
+		return prog_state.strict_mode;
+	}
+	if (!prog_state.curr_repeat_list) {
+		std::cerr << "Expecting \"REPEAT\" command before \"ENDREPEAT\" \n";
+		return prog_state.strict_mode;
+	}
+	assert(!prog_state.repeat_count_vec.empty());
+	assert(*prog_state.repeat_count_vec.rbegin() > 0);
+	unsigned end_ind = 2;
+
+	while (end_ind > 1) {
+		end_ind = (*prog_state.repeat_count_vec.rbegin()) - 1;
+		std::cerr << "process_end_repeat_command loop end_ind = " << end_ind <<'\n';
+		if (end_ind > 1) {
+			*prog_state.repeat_count_vec.rbegin() = end_ind;
+			prog_state.curr_repeat_list->first = false;
+			std::list<ProgCommand> to_repeat = prog_state.curr_repeat_list->second;
+			// we repeat the loop that we are currently in. This could be recursive if loops are nested
+			for (unsigned i = 0; i < end_ind; ++i) {
+				std::cerr << "About to repeat: {\n";
+				for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
+					const ProgCommand & cmd = *c_it;
+					std::cerr << "  " << cmd[0] << '\n';
+				}
+				std::cerr << " }\n";
+
+				for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
+					const ProgCommand & cmd = *c_it;
+					rec_and_process_command(cmd, prog_state, false);
+				}
+			}
+		}
+		else {
+			prog_state.repeat_count_vec.pop_back();
+			assert(prog_state.curr_repeat_list);
+			if (prog_state.command_list_list.empty()) {
+				prog_state.curr_repeat_list = nullptr;
+			}
+			else {
+				*prog_state.curr_repeat_list = *prog_state.command_list_list.rbegin();
+				prog_state.command_list_list.pop_back();
+			}
+		}
+	}
+	return true;
+}
+
+bool process_weight_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	if (command_vec.size() <= 2) {
 		std::cerr << "Expected a weight then a filepath of names after the WEIGHT command.\n";
@@ -401,7 +501,7 @@ bool process_weight_command(const std::vector<std::string> command_vec,
 }
 
 
-bool process_sample_command(const std::vector<std::string> command_vec,
+bool process_sample_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	SimTree & tree = prog_state.get_full_tree();
 	if (tree.blob.get_sum_leaf_weights() < 0.0) {
@@ -420,16 +520,16 @@ bool process_sample_command(const std::vector<std::string> command_vec,
 	return true;
 }
 
-bool process_print_command(const std::vector<std::string> command_vec,
+bool process_print_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	bool nexus = false;
-	if (command_vec.size() > 1 && capitalize(command_vec[1]) == "NEXUS") {
+	if (command_vec.size() > 1 and capitalize(command_vec[1]) == "NEXUS") {
 		nexus = true;
 	}
 	prog_state.print_tree(false, nexus);
 	return true;
 }
-bool process_out_command(const std::vector<std::string> command_vec,
+bool process_out_command(const ProgCommand &  command_vec,
 						 ProgState & prog_state) {
 	if (command_vec.size() == 1) {
 		prog_state.err_stream << "Expecting an argument (FILE, STD, or STOP) after OUT command.";
@@ -461,9 +561,7 @@ bool process_out_command(const std::vector<std::string> command_vec,
 	return unrecognize_arg("OUT", command_vec.at(1).c_str(), prog_state);
 }
 
-bool process_command(const std::vector<std::string> & command_vec,
-					 const TaxonNameUniverse & ,
-					 const SimTree & ,
+bool process_command(const ProgCommand & command_vec,
 					 ProgState & prog_state) {
 	if (command_vec.empty()) {
 		return true;
@@ -479,11 +577,17 @@ bool process_command(const std::vector<std::string> & command_vec,
 	if (cmd == "QUIT") {
 		return false;
 	}
+	else if (cmd == "ENDREPEAT") {
+		return process_end_repeat_command(command_vec, prog_state);
+	}
 	else if (cmd == "OUT") {
 		return process_out_command(command_vec, prog_state);
 	}
 	else if (cmd == "PRINT") {
 		return process_print_command(command_vec, prog_state);
+	}
+	else if (cmd == "REPEAT") {
+		return process_repeat_command(command_vec, prog_state);
 	}
 	else if (cmd == "RESOLVE") {
 		return process_resolve_command(command_vec, prog_state);
@@ -499,17 +603,61 @@ bool process_command(const std::vector<std::string> & command_vec,
 		return !prog_state.strict_mode;
 	}
 	return true;
-
 }
 
-std::vector<std::string> parse_command(std::istream & inp) {
+bool rec_and_process_command(const ProgCommand & command_vec,
+					 		 ProgState & prog_state,
+					 		 bool record) {
+	if (command_vec.empty()) {
+		return true;
+	}
+	if (prog_state.curr_repeat_list) {
+		std::cerr << "prog_state.curr_repeat_list has " <<prog_state.curr_repeat_list->second.size() << " elements.\n";
+	}
+	else {
+		std::cerr << "prog_state.curr_repeat_list is NULL\n";
+	}
+	if (prog_state.command_list_list.empty()) {
+		std::cerr << "prog_state.command_list_list is empty\n";
+	}
+	else {
+		std::cerr << "prog_state.command_list_list has " <<prog_state.command_list_list.size() << " elements (first with " << prog_state.command_list_list.begin()->second.size()<< " commands)\n";
+	}
+	std::string cmd = capitalize(command_vec[0]);
+	typedef std::list<ProgState::cmd_recorder_t>::iterator cmd_stack_it;
+	if (record and cmd == "ENDREPEAT") {
+		for (cmd_stack_it cll_it = prog_state.command_list_list.begin(); cll_it != prog_state.command_list_list.end(); ++cll_it) {
+			ProgState::cmd_recorder_t & com_list = *cll_it;
+			if (com_list.first) {
+				com_list.second.push_back(command_vec);
+			}
+		}
+	}
+	const bool ret = process_command(command_vec, prog_state);
+	if (cmd != "REPEAT" and prog_state.curr_repeat_list) {
+		if (prog_state.curr_repeat_list->first) {
+			prog_state.curr_repeat_list->second.push_back(command_vec);
+		}
+	}
+	if (ret and record and cmd != "ENDREPEAT") {
+		for (cmd_stack_it cll_it = prog_state.command_list_list.begin(); cll_it != prog_state.command_list_list.end(); ++cll_it) {
+			ProgState::cmd_recorder_t & com_list = *cll_it;
+			if (com_list.first) {
+				com_list.second.push_back(command_vec);
+			}
+		}
+	}
+	return ret;
+}
+
+ProgCommand parse_command(std::istream & inp) {
 	std::stringbuf str_buf;
 	inp.get(str_buf, ';');
 	std::string x = str_buf.str();
 	if (inp.good()) {
 		inp.get(); // skip the delimiting character
 	}
-	std::vector<std::string> command_vec;
+	ProgCommand command_vec;
 	if (x.empty()) {
 		return command_vec;
 	}
@@ -550,12 +698,11 @@ void run_command_interpreter(std::istream & command_stream,
 							 ProgState & prog_state) {
 	std::string command;
 	bool keep_executing = true;
-	while (keep_executing && command_stream.good()) {
-		std::vector<std::string> command_vec = parse_command(command_stream);
-		keep_executing = process_command(command_vec,
-										 taxa,
-										 tree,
-										 prog_state);
+	while (keep_executing and command_stream.good()) {
+		ProgCommand command_vec = parse_command(command_stream);
+		keep_executing = rec_and_process_command(command_vec,
+										 		 prog_state,
+										 		 true);
 	}
 }
 void print_help(std::ostream & out) {
