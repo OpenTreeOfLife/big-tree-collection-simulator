@@ -789,8 +789,11 @@ bool do_sample(ProgState & prog_state,
 						break;
 					}
 				}
-				nnodes_t potential_outgroup = ingroup_root->get_parent()->blob.get_num_leaves_below() - potential_ingroup;
-				if (potential_outgroup < out_min) { // not enough in the outgroup. Reject this draw, but don't change params (this result depends on the size of the sister group, which can fluctuate freely with the depth of the tree.
+				if (ingroup_root) {
+					nnodes_t potential_outgroup = ingroup_root->get_parent()->blob.get_num_leaves_below() - potential_ingroup;
+					if (potential_outgroup < out_min) { // not enough in the outgroup. Reject this draw, but don't change params (this result depends on the size of the sister group, which can fluctuate freely with the depth of the tree.
+						ingroup_root = nullptr;
+					}
 				}
 			}
 		}
