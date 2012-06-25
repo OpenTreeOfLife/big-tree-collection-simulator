@@ -508,23 +508,22 @@ bool process_end_repeat_command(const ProgCommand & command_vec,
 	while (end_ind > 1) {
 		end_ind = (*prog_state.repeat_count_vec.rbegin()) - 1;
 		//std::cerr << "process_end_repeat_command loop end_ind = " << end_ind <<'\n';
-		if (end_ind > 1) {
+		if (end_ind >= 1) {
 			*prog_state.repeat_count_vec.rbegin() = end_ind;
 			prog_state.curr_repeat_list->first = false;
 			std::list<ProgCommand> to_repeat = prog_state.curr_repeat_list->second;
 			// we repeat the loop that we are currently in. This could be recursive if loops are nested
-			for (unsigned i = 0; i < end_ind; ++i) {
-				//std::cerr << "About to repeat: {\n";
-				for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
-					const ProgCommand & cmd = *c_it;
-					//std::cerr << "  " << cmd[0] << '\n';
-				}
-				//std::cerr << " }\n";
 
-				for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
-					const ProgCommand & cmd = *c_it;
-					rec_and_process_command(cmd, prog_state, false);
-				}
+			//std::cerr << "About to repeat: {\n";
+			for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
+				const ProgCommand & cmd = *c_it;
+				//std::cerr << "  " << cmd[0] << '\n';
+			}
+			//std::cerr << " }\n";
+
+			for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
+				const ProgCommand & cmd = *c_it;
+				rec_and_process_command(cmd, prog_state, false);
 			}
 		}
 		else {
