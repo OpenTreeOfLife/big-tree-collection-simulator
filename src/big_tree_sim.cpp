@@ -970,11 +970,11 @@ bool process_out_command(const ProgCommand &  command_vec,
 	}
 	std::string arg = capitalize(command_vec[1]);
 	if (arg == "FILE") {
-		if (command_vec.size() == 2) {
-			prog_state.err_stream << "Expecting a file path after OUT FILE";
+		if (command_vec.size() < 4 or command_vec.at(2) != "=") {
+			prog_state.err_stream << "Expecting filepaths to be specified as OUT FILE = filepath\n";
 			return !prog_state.strict_mode;
 		}
-		const char * filepath = command_vec.at(2).c_str();
+		const char * filepath = command_vec.at(3).c_str();
 		prog_state.set_output_file(filepath);
 		if (! prog_state.out_good()) {
 			prog_state.err_stream << "Could not open the file \"" << filepath << "\". Output set to standard out!\n";
