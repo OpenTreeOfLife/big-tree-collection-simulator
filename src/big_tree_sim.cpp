@@ -155,10 +155,11 @@ class SimNdBlob {
 	public:
 		SimNdBlob()
 			:_edge_length(0.0),
-			_sum_leaf_weights(1.0) {
+			_sum_leaf_weights(1.0),
+			_num_leaves_below(1) {
 		}
 
-		double get_sum_leaf_weights() {
+		double get_sum_leaf_weights() const {
 			return this->_sum_leaf_weights;
 		}
 		void set_sum_leaf_weights(double x) {
@@ -167,10 +168,19 @@ class SimNdBlob {
 		double get_edge_length() const {
 			return _edge_length;
 		}
-
+		nnodes_t get_num_leaves_below() const {
+			return this->_num_leaves_below;
+		}
+		void set_num_leaves_below(nnodes_t x) {
+			this->_num_leaves_below = x;
+		}
+		void debug_dump(std::ostream &o) const {
+			o << " sum_leaf_weights=" << this->_sum_leaf_weights << " _num_leaves_below=" << this->_num_leaves_below;
+		}
 	private:
 		double _edge_length;
 		double _sum_leaf_weights;
+		nnodes_t _num_leaves_below;
 };
 class SimTreeBlob {
 	public:
@@ -193,6 +203,11 @@ typedef Tree<SimNdBlob, SimTreeBlob> SimTree;
 ////////////////////////////////////////////////////////////////////////////////
 // Main impl
 ////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Sums the sum_leaf_weights and num_leaves_below attributues of the node blob
+//	Sets the sum_leaf_weights for the tree.
+////////
 template <typename T, typename U>
 void sum_leaf_weights_over_tree(Tree<T,U> & tree) {
 	typedef typename Tree<T,U>::Node_T::fast_postorder_iterator nd_it_t;
@@ -201,10 +216,14 @@ void sum_leaf_weights_over_tree(Tree<T,U> & tree) {
 		Node<T> & nd = *it;
 		if (nd.is_internal()) {
 			double x = 0.0;
+			nnodes_t num_leaves_below = 0;
 			for (child_it c_it = nd.begin_child(); c_it != nd.end_child(); ++c_it) {
-				x += c_it->blob.get_sum_leaf_weights();
+				const T & blob = c_it->blob;
+				x += blob.get_sum_leaf_weights();
+				num_leaves_below += blob.get_num_leaves_below();
 			}
 			nd.blob.set_sum_leaf_weights(x);
+			nd.blob.set_num_leaves_below(num_leaves_below);
 		}
 	}
 	assert(tree.get_root());
@@ -241,6 +260,52 @@ Node<T> * find_leaf_by_weight_range(Tree<T,U> & tree, double x) {
 	}
 }
 
+template <typename T>
+const Node<T> * find_leaf_by_weight_range_offsets(const Node <T> & root,
+									      double x,
+										  const std::unordered_map<const Node <T> *, double> & wt_offset) {
+	double curr_nd_offset = get_or_def_const(wt_offset, &root, 0.0);
+	if (x > root.blob.get_sum_leaf_weights() - curr_nd_offset) {
+		return nullptr;
+	}
+	std::string indent = " ";
+	std::cerr << indent <<  "find_leaf_by_weight_range_offsets x = " << x << " root weight = " << root.blob.get_sum_leaf_weights() << " - " << curr_nd_offset << "\n";
+	const Node<T> * curr_nd = &root;
+	for (;;) {
+		typedef typename Node<T>::const_child_iterator ch_it;
+		assert(curr_nd->is_internal());
+		const Node<T> * prev = curr_nd;
+		indent.append(2, ' ');
+		for (ch_it c_it = curr_nd->begin_child(); c_it != curr_nd->end_child(); ++c_it) {
+			const double subtree_wt = c_it->blob.get_sum_leaf_weights();
+			const double subtree_offset = get_or_def_const(wt_offset, &(*c_it), 0.0);
+			std::cerr << indent <<  "before x = " << x << " subtree_wt = " << subtree_wt << " - " << subtree_wt << "\n";
+			if (subtree_offset < subtree_wt) {
+				const double corrected_wt = subtree_wt - subtree_offset;
+				if (corrected_wt < x) {
+					x -= corrected_wt;
+					std::cerr << indent <<  "decremented x => " << x << "\n";
+				}
+				else {
+					curr_nd = &(*c_it);
+					std::cerr << indent <<  "chose nd curr_nd =" << curr_nd << "\n";
+					if (c_it->is_leaf()) {
+						std::cerr << indent <<  "It is a leaf!\n";
+						return curr_nd;
+					}
+					break;
+				}
+			}
+		}
+		if (curr_nd == nullptr or prev == curr_nd) {
+			return nullptr;
+		}
+	}
+}
+
+
+
+
 typedef std::vector<std::string> ProgCommand;
 class ProgState;
 bool rec_and_process_command(const ProgCommand & command_vec,
@@ -265,6 +330,22 @@ class ProgState {
 			last_seed(seed),
 			rng(seed) {
 			this->current_tree = &(this->full_tree);
+		}
+		void sample_new_focal(const SimNode * src_root,
+		                      const std::set<const SimNode *> & leaves,
+		                      const std::set<const SimNode *> & traversed) {
+		    if (this->current_tree != &(this->full_tree)) {
+		    	SimTree * t = this->current_tree;
+		    	this->current_tree = 0L;
+		    	delete [] t;
+
+		    }
+		    this->current_tree = create_new_subsampled_tree(src_root,
+		    												leaves,
+		    												traversed,
+		    												this->nd_blob,
+		    												this->tree_blob,
+		    												2*src_root->blob.get_num_leaves_below());
 		}
 
 		void print_tree(bool edge_lengths, bool nexus) const {
@@ -331,6 +412,8 @@ class ProgState {
 		cmd_recorder_t scratch_repeat_list;
 		cmd_recorder_t *curr_repeat_list;
 		std::list<cmd_recorder_t> command_list_list;
+		unsigned max_tries = 10;
+
 	private:
 		std::ostream * outp;
 		std::ofstream outp_obj;
@@ -339,6 +422,8 @@ class ProgState {
 		RandGen::uint_seed_t last_seed;
 	public:
 		RandGen rng;
+		SimNdBlob nd_blob;
+		SimTreeBlob tree_blob;
 
 		ProgState(const ProgState & other); // not defined, not copyable
 		ProgState & operator=(const ProgState & other);// not defined, not copyable
@@ -521,13 +606,127 @@ std::pair<bool, long> parse_pos_int(ProgState & prog_state,
 	return r;
 }
 
+bool sample_leaves_and_traversed(const SimNode & root,
+								 const nnodes_t num_leaves,
+								 std::set<const SimNode *> * sampled,
+								 std::set<const SimNode *> * traversed,
+								 const SimNode * to_include,
+								 const SimNode * avoid_node, // if we want to avoid a clade (e.g. avoid the ingroup) send in its pointer here...
+								 RandGen & rng,
+								 ProgState & prog_state) {
+	assert(num_leaves <= root.blob.get_num_leaves_below());
+	if (num_leaves == root.blob.get_num_leaves_below()) {
+		// grab each leaf
+		for (SimNode::const_fast_postorder_iterator nd_it = root.begin_fast_postorder(); nd_it != root.end_fast_postorder(); ++nd_it) {
+			const SimNode * nd_ptr = &(*nd_it);
+			assert(nd_ptr);
+			if (nd_ptr->is_leaf()) {
+				sampled->insert(nd_ptr);
+			}
+			else {
+				traversed->insert(nd_ptr);
+			}
+		}
+		return true;
+	}
+	if (num_leaves == 0) {
+		return true;
+	}
+	std::cerr << " Sampling ="<< num_leaves << " leaves from a clade of " << root.blob.get_num_leaves_below() << " leaves\n";
+	std::unordered_map<const SimNode *, double> weight_offset;
+	nnodes_t num_added = 0;
+	std::list<const SimNode *> path_to_anc;
+	std::list<const SimNode *>::const_iterator p2a_it;
+	typedef std::back_insert_iterator<std::list<const SimNode *> > back_it_t;
+
+	if (avoid_node) {
+		std::cerr << " Avoiding a clade of "<< avoid_node->blob.get_num_leaves_below() << " leaves.\n";
+		back_it_t back_i = back_inserter(path_to_anc);
+		if (!avoid_node->put_path_to_anc(&root, back_i)) {
+			assert(false);
+			std::cerr << "Ancestor of avoid_node node not found!\n";
+			return false;
+		}
+		const double wt = avoid_node->blob.get_sum_leaf_weights();
+		for (p2a_it = path_to_anc.begin(); p2a_it != path_to_anc.end(); ++p2a_it) {
+			const SimNode * nd_ptr2 = *p2a_it;
+			weight_offset[nd_ptr2] += wt;
+			std::cerr << "   weight="<< nd_ptr2->blob.get_sum_leaf_weights() << " offset[" << nd_ptr2 << "] = " << weight_offset[nd_ptr2] << "\n";
+		}
+	}
+
+	if (to_include) {
+		assert(to_include->is_leaf());
+		back_it_t back_i = back_inserter(path_to_anc);
+		if (!to_include->put_path_to_anc(&root, back_i)) {
+			assert(false);
+			std::cerr << "Ancestor of leaf node not found!\n";
+			return false;
+		}
+		++num_added;
+
+		const double wt = to_include->blob.get_sum_leaf_weights();
+		for (p2a_it = path_to_anc.begin(); p2a_it != path_to_anc.end(); ++p2a_it) {
+			const SimNode * nd_ptr2 = *p2a_it;
+			if (nd_ptr2->is_leaf()) {
+				sampled->insert(nd_ptr2);
+			}
+			else {
+				traversed->insert(nd_ptr2);
+			}
+			weight_offset[nd_ptr2] += wt;
+			std::cerr << "   weight="<< nd_ptr2->blob.get_sum_leaf_weights() << " offset[" << nd_ptr2 << "] = " << weight_offset[nd_ptr2] << "\n";
+		}
+		std::cerr << "  Orig leaf added\n";
+	}
+
+	while (num_added < num_leaves) {
+		std::cerr << "  Adding leaf " << 1 + num_added << "\n";
+		double u = rng.uniform01();
+		double x = u * (root.blob.get_sum_leaf_weights() - weight_offset[&root]);
+		std::cerr << "  u="<< u << " root.weight=" << root.blob.get_sum_leaf_weights() << " root offset=" << weight_offset[&root] << " x=" << x <<  "\n";
+		const SimNode * next_leaf = nullptr;
+		for (unsigned trial = 0; next_leaf == nullptr and trial < prog_state.max_tries; ++trial) {
+			next_leaf = find_leaf_by_weight_range_offsets(root,
+														  x,
+														  weight_offset);
+		}
+		if (next_leaf == nullptr) {
+			prog_state.err_stream << "Could not find a random leaf - this could be caused by rounding error if the leaf weights vary dramatically!\n";
+			return false;
+		}
+		path_to_anc.clear();
+		back_it_t back_i = back_inserter(path_to_anc);
+		if (!next_leaf->put_path_to_anc(&root, back_i)) {
+			assert(false);
+			std::cerr << "Ancestor of rand leaf node not found!\n";
+			return false;
+		}
+		++num_added;
+		const double wt = next_leaf->blob.get_sum_leaf_weights();
+		for (p2a_it = path_to_anc.begin(); p2a_it != path_to_anc.end(); ++p2a_it) {
+			const SimNode * nd_ptr3 = *p2a_it;
+			if (nd_ptr3->is_leaf()) {
+				sampled->insert(nd_ptr3);
+			}
+			else {
+				traversed->insert(nd_ptr3);
+			}
+			weight_offset[nd_ptr3] += wt;
+			//std::cerr << "   weight="<< nd_ptr2->blob.get_sum_leaf_weights() << " offset[" << nd_ptr2 << "] = " << weight_offset[nd_ptr2] << "\n";
+		}
+	}
+	return true;
+}
+
+
 bool do_sample(ProgState & prog_state,
-			  unsigned root_min,
-			  unsigned root_max,
-			  unsigned in_min,
-			  unsigned in_max,
-			  unsigned out_min,
-			  unsigned out_max) {
+			  const unsigned arg_root_min,
+			  const unsigned arg_root_max,
+			  const nnodes_t in_min,
+			  const nnodes_t arg_in_max,
+			  const nnodes_t out_min,
+			  const nnodes_t arg_out_max) {
 	SimTree & tree = prog_state.get_full_tree();
 	if (tree.blob.get_sum_leaf_weights() < 0.0) {
 		sum_leaf_weights_over_tree(tree);
@@ -537,16 +736,26 @@ bool do_sample(ProgState & prog_state,
 	prog_state.err_stream.setf(std::ios::fixed);
 	prog_state.err_stream.precision(5);
 	prog_state.err_stream << w << '\n';
-	const unsigned max_tries = 100;
-	for (unsigned trial = 0; trial < max_tries; ++trial) {
+	prog_state.err_stream << "tree.blob.get_num_leaves_below() = ";
+	prog_state.err_stream << tree.get_root()->blob.get_num_leaves_below() << '\n';
+	prog_state.err_stream << "Will try to sample: root depth ["<< arg_root_min << ", " << arg_root_max << "]\n";
+	prog_state.err_stream << "                    ingroup    ["<< in_min << ", " << arg_in_max << "]\n";
+	prog_state.err_stream << "                    outgroup   ["<< out_min << ", " << arg_out_max << "]\n";
+
+	for (unsigned trial = 0; trial < prog_state.max_tries; ++trial) {
+		if (trial > 0) {
+			prog_state.err_stream << " sample trial failed. Trying again...\n";
+		}
 		// Step 1: Choose a leaf (using the leaf weighting)
 		double rand_x = prog_state.rng.uniform01() * w;
-		SimNode * leaf_nd = find_leaf_by_weight_range(tree, rand_x);
+		const SimNode * leaf_nd = find_leaf_by_weight_range(tree, rand_x);
 		prog_state.err_stream << "Chose \"" << leaf_nd->get_label().c_str() << "\"\n";
 		unsigned root_depth, ingroup_size, outgroup_size;
+		unsigned root_min = arg_root_min;
+		unsigned root_max = arg_root_max;
 
 		// Step 2: choose the depth of the root
-		SimNode * ingroup_root = nullptr;
+		const SimNode * ingroup_root = nullptr;
 		while (ingroup_root == nullptr) {
 			if (root_min < root_max) {
 				root_depth = prog_state.rng.rand_range(root_min, root_max);
@@ -554,25 +763,100 @@ bool do_sample(ProgState & prog_state,
 			else {
 				root_depth = root_min;
 			}
-			unsigned x;
-			ingroup_root = leaf_nd->get_ancestor_by_rank(root_depth, &x);
-			if (ingroup_root == nullptr or ingroup_root->get_parent() == nullptr) {
+			unsigned x = 0;
+			ingroup_root = leaf_nd->get_ancestor_by_edge_dist(root_depth, &x);
+			if (ingroup_root == nullptr or ingroup_root->get_parent() == nullptr) { // reached the root of the tree in the ingroup
+				ingroup_root = nullptr;
 				root_max = x - 1;
+				prog_state.err_stream << "  Cropping root depth ["<< root_min << ", " << root_max << "]\n";
 				if (root_max < root_min) {
 					break;
+				}
+			}
+			if (ingroup_root) {
+				nnodes_t potential_ingroup = ingroup_root->blob.get_num_leaves_below();
+				if (potential_ingroup < in_min) { // not enough leaves at this depth, increase the min depth
+					ingroup_root = nullptr;
+					root_min = root_depth + 1;
+					prog_state.err_stream << "  Bumping up root_min ["<< root_min << ", " << root_max << "]\n";
+
+					if (root_max < root_min) {
+						break;
+					}
+				}
+				nnodes_t potential_outgroup = ingroup_root->get_parent()->blob.get_num_leaves_below() - potential_ingroup;
+				if (potential_outgroup < out_min) { // not enough in the outgroup. Reject this draw, but don't change params (this result depends on the size of the sister group, which can fluctuate freely with the depth of the tree.
 				}
 			}
 		}
 		if (ingroup_root == nullptr) {
 			continue;
 		}
-		SimNode * sample_root = ingroup_root->get_parent();
+		const SimNode * sample_root = ingroup_root->get_parent();
 		assert(sample_root);
 
-		//Step 3: choose the taxa
+		//Step 3: choose the ingroup
+		const nnodes_t num_below_sr = sample_root->blob.get_num_leaves_below();
+		const nnodes_t num_possible_ingroup = ingroup_root->blob.get_num_leaves_below();
+		const nnodes_t num_possible_outgroup = num_below_sr - num_possible_ingroup;
+		prog_state.err_stream << " sample_root found num_possible_ingroup="<< num_possible_ingroup << ", num_below_sr=" << num_below_sr << "\n";
+		std::set<const SimNode *> leaf_nodes;
+		std::set<const SimNode *> traversed_internals_nodes;
+		assert(num_possible_ingroup >= in_min);
+		nnodes_t in_max = arg_in_max;
+		if (num_possible_ingroup < in_max) {
+			in_max = num_possible_ingroup;
+		}
+		nnodes_t in_size = (in_max == in_min ? in_min : prog_state.rng.rand_range(in_min, in_max));
+		if (!sample_leaves_and_traversed(*ingroup_root,
+										 in_size,
+										 &leaf_nodes,
+										 &traversed_internals_nodes,
+										 leaf_nd,
+										 nullptr,
+										 prog_state.rng,
+										 prog_state)) {
+			continue;
+		}
 
+		traversed_internals_nodes.insert(ingroup_root);
+		traversed_internals_nodes.insert(sample_root);
 
+		//Step 4: choose the outgroup
+		assert(num_possible_outgroup >= out_min);
+		nnodes_t out_max = arg_out_max;
+		if (num_possible_outgroup < out_max) {
+			out_max = num_possible_outgroup;
+		}
+		nnodes_t out_size = (out_max == out_min ? out_min : prog_state.rng.rand_range(out_min, out_max));
+		if (!sample_leaves_and_traversed(*sample_root,
+										 out_size,
+										 &leaf_nodes,
+										 &traversed_internals_nodes,
+										 nullptr,
+										 ingroup_root,
+										 prog_state.rng,
+										 prog_state)) {
+			continue;
+		}
+
+		std::cerr << "Full Tree\n";
+		sample_root->debug_dump(std::cerr, true);
+		std::cerr << "Leaves\n";
+		for (auto nd_it : leaf_nodes) {
+			nd_it->debug_dump(std::cerr, true);
+		}
+		std::cerr << "traversed_internals_nodes:\n";
+		for (auto nd_it : traversed_internals_nodes) {
+			nd_it->debug_dump(std::cerr, false);
+		}
+		prog_state.sample_new_focal(sample_root, leaf_nodes, traversed_internals_nodes);
+		if (prog_state.get_focal_tree()) {
+			return true;
+		}
 	}
+
+	prog_state.err_stream << prog_state.max_tries << " sample trials failed. bailing out...\n";
 
 	return true;
 }
@@ -747,16 +1031,16 @@ bool rec_and_process_command(const ProgCommand & command_vec,
 		return true;
 	}
 	if (prog_state.curr_repeat_list) {
-		std::cerr << "prog_state.curr_repeat_list has " <<prog_state.curr_repeat_list->second.size() << " elements.\n";
+		//std::cerr << "prog_state.curr_repeat_list has " <<prog_state.curr_repeat_list->second.size() << " elements.\n";
 	}
 	else {
-		std::cerr << "prog_state.curr_repeat_list is NULL\n";
+		//std::cerr << "prog_state.curr_repeat_list is NULL\n";
 	}
 	if (prog_state.command_list_list.empty()) {
-		std::cerr << "prog_state.command_list_list is empty\n";
+		//std::cerr << "prog_state.command_list_list is empty\n";
 	}
 	else {
-		std::cerr << "prog_state.command_list_list has " <<prog_state.command_list_list.size() << " elements (first with " << prog_state.command_list_list.begin()->second.size()<< " commands)\n";
+		//std::cerr << "prog_state.command_list_list has " <<prog_state.command_list_list.size() << " elements (first with " << prog_state.command_list_list.begin()->second.size()<< " commands)\n";
 	}
 	std::string cmd = capitalize(command_vec[0]);
 	typedef std::list<ProgState::cmd_recorder_t>::iterator cmd_stack_it;
@@ -935,9 +1219,10 @@ int main(int argc, char *argv[]) {
 	}
 	TaxonNameUniverse taxa;
 	SimTree * tree = nullptr;
+	SimNdBlob nd_blob;
+	SimTreeBlob tree_blob;
 	try {
-		SimNdBlob nd_blob;
-		SimTreeBlob tree_blob;
+
 		tree = parse_from_newick_stream<SimNdBlob, SimTreeBlob>(inp, taxa, nd_blob, tree_blob);
 		if (tree == nullptr) {
 			std::cerr << "No tree found!\n";
@@ -951,6 +1236,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	ProgState prog_state(taxa, *tree, seed);
+	prog_state.nd_blob = nd_blob;
+	prog_state.tree_blob = tree_blob;
 	prog_state.set_output_stream(&std::cout);
 	std::istream & command_stream = std::cin;
 	if (interactive) {

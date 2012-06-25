@@ -210,7 +210,7 @@ class Node {
 		}
 		typedef typename std::back_insert_iterator<std::list<const Node<T> *> > back_const_list_inserter;
 		bool put_path_to_anc(const Node<T> * anc, back_const_list_inserter & b_it) const {
-			Node<T> * curr_nd = this;
+			const Node<T> * curr_nd = this;
 			for (;;) {
 				b_it = curr_nd;
 				if (curr_nd == anc) {
@@ -224,9 +224,9 @@ class Node {
 		}
 		// if nullptr is returned then, *max_rank will be the rank of the root
 		//	from `this` node.
-		Node<T> * get_ancestor_by_edge_dist(unsigned anc_edge_dist, unsigned *max_rank) {
+		const Node<T> * get_ancestor_by_edge_dist(unsigned anc_edge_dist, unsigned *max_rank) const {
 			unsigned curr_depth = 0;
-			Node<T> * curr_nd = this;
+			const Node<T> * curr_nd = this;
 			while (curr_depth < anc_edge_dist) {
 				curr_nd = curr_nd->_parent;
 				if (curr_nd == nullptr) {
@@ -777,6 +777,14 @@ class Node {
 			this->_right_sib = nullptr;
 			this->_parent = nullptr;
 		}
+		void copy_other_data(const Node<T> & other) {
+			this->blob = other.blob;
+			this->_label = other._label;
+			std::cerr << " In copy_other_data ";
+			this->debug_dump(std::cerr, false);
+			std::cerr << " from ";
+			other.debug_dump(std::cerr, false);
+		}
 	void debug_check_subtree_nav_pointers() const {
 #		if ! defined(NDEBUG)
 			std::stack<const Node<T> *> c_stack;
@@ -825,6 +833,24 @@ class Node {
 
 		mutable T blob;
 
+		void debug_dump(std::ostream & o, bool recursive, std::string indent=std::string()) const {
+			o << indent << "Node label=\"";
+			if (_label.c_str()) {
+				o << this->_label.c_str() << "\"";
+			}
+			else {
+				o << "\"";
+			}
+			o << " addr=" << this << " parent=" << this->_parent << " lchild=" << this->_left_child << " rsib=" << this->_right_sib << ' ';
+			this->blob.debug_dump(o);
+			o << '\n';
+			if (recursive) {
+				indent.append(2, ' ');
+				for (const_child_iterator c_it = this->begin_child(); c_it != this->end_child(); ++c_it) {
+					c_it->debug_dump(o, true, indent);
+				}
+			}
+		}
 	private:
 		TaxonLabel _label;
 		Node<T> * _left_child;
@@ -902,6 +928,12 @@ class Tree {
 
 		Node<T> * get_new_sib(Node<T> & old_nd);
 		Node<T> * get_new_left_child(Node<T> & old_nd);
+		Node<T> * get_new_child(Node<T> & old_nd) {
+			if (old_nd.get_left_child()) {
+				return this->get_new_sib(*(old_nd.get_left_child()));
+			}
+			return this->get_new_left_child(old_nd);
+		}
 
 		void debug_check() const {
 #			if ! defined(NDEBUG)
@@ -1112,131 +1144,252 @@ Tree<T, U> * parse_from_newick_stream(std::istream & input,
 	tree->blob = tree_blob;
 	curr_node = tree->get_root();
 	std::streambuf * rdbuf = input.rdbuf();
-	for(;;) {
-		signed char c = rdbuf->sbumpc(); filepos++; filecol++;
-		if (c == ',') {
-			if (curr_mode == IN_LABEL and prev_control_char != ':') {
-				add_taxon_label(taxa, label, curr_node, tree);
-			}
-			else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
-				throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
-			}
-			curr_node = tree->get_new_sib(*curr_node);
-			curr_node->blob = nd_blob;
-			prev_control_char = c;
-			curr_mode = OUT_OF_LABEL;
-		}
-		else if (c == ')') {
-			if (curr_mode == IN_LABEL and prev_control_char != ':') {
-				add_taxon_label(taxa, label, curr_node, tree);
-			}
-			else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
-				throw ParseExcept("Expecting every leaf to have a label. Found a closed parenthesis.", fileline, filecol, filepos);
-			}
-			curr_node = curr_node->get_parent();
-			prev_control_char = c;
-			curr_mode = OUT_OF_LABEL;
-		}
-		else if (c == '(') {
-			if (curr_mode == IN_LABEL) {
-				throw ParseExcept("Unexpected ( after taxon label. Expecting labels after clade", fileline, filecol, filepos);
-			}
-			curr_node = tree->get_new_left_child(*curr_node);
-			curr_node->blob = nd_blob;
-			prev_control_char = c;
-			curr_mode = OUT_OF_LABEL;
-		}
-		else if (c == ':') {
-			if (curr_mode == IN_LABEL and prev_control_char != ':') {
-				add_taxon_label(taxa, label, curr_node, tree);
-			}
-			prev_control_char = c;
-			curr_mode = OUT_OF_LABEL;
-		}
-		else if (c == ';') {
-			assert(curr_node == tree->get_root());
-			return tree;
-		}
-		else if(isgraph(c)) {
-			if (curr_mode == OUT_OF_LABEL) {
-				label.clear();
-				if (c == '\'') {
-					if (!input.good()) {
-						throw ParseExcept("Quote started then EOF", fileline, filecol, filepos);
-					}
-					for (;;) {
-						if (!input.good()) {
-							throw ParseExcept("File reading before termination of quote", fileline, filecol, filepos);
-						}
-						char q = rdbuf->sbumpc(); filepos++; filecol++;
-						if (q == '\'') {
-							const signed char d = rdbuf->sgetc(); // peek
-							if (d == '\'') {
-								label.append(1, q);
-								q = rdbuf->sbumpc(); filepos++; filecol++;
-							}
-							else {
-								break;
-							}
-						}
-						else {
-							label.append(1, q);
-						}
-					}
-					add_taxon_label(taxa, label, curr_node, tree); // handling this here works for typical trees, but it will also not reject internal node names before subtrees.
-					cache.clear();
+	try {
+		for(;;) {
+			signed char c = rdbuf->sbumpc(); filepos++; filecol++;
+			if (c == ',') {
+				if (curr_mode == IN_LABEL and prev_control_char != ':') {
+					add_taxon_label(taxa, label, curr_node, tree);
 				}
-				else {
-					curr_mode = IN_LABEL;
-					cache.clear();
+				else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
+					throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
 				}
+				curr_node = tree->get_new_sib(*curr_node);
+				curr_node->blob = nd_blob;
+				prev_control_char = c;
+				curr_mode = OUT_OF_LABEL;
 			}
-			else if (!cache.empty()) {
-				label += cache;
-				cache.clear();
-			}
-			if (c == '_') {
-				label.append(1, ' ');
-			}
-			else if (c == '[') {
-				if (preserve_comments) {
-					label.append(1, '[');
+			else if (c == ')') {
+				if (curr_mode == IN_LABEL and prev_control_char != ':') {
+					add_taxon_label(taxa, label, curr_node, tree);
 				}
-				comment_level = 1;
-				if (!input.good()) {
-					throw ParseExcept("Comment started then EOF", fileline, filecol, filepos);
+				else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
+					throw ParseExcept("Expecting every leaf to have a label. Found a closed parenthesis.", fileline, filecol, filepos);
 				}
-				while (comment_level > 0) {
-					if (!input.good()) {
-						throw ParseExcept("File reading before termination of comment", fileline, filecol, filepos);
-					}
-					char q = rdbuf->sbumpc(); filepos++; filecol++;
-					if (preserve_comments) {
-						label.append(1, q);
-					}
-					if (q == '[')
-						comment_level++;
-					else if (q == ']')
-						comment_level--;
+				curr_node = curr_node->get_parent();
+				prev_control_char = c;
+				curr_mode = OUT_OF_LABEL;
+			}
+			else if (c == '(') {
+				if (curr_mode == IN_LABEL) {
+					throw ParseExcept("Unexpected ( after taxon label. Expecting labels after clade", fileline, filecol, filepos);
 				}
+				curr_node = tree->get_new_left_child(*curr_node);
+				curr_node->blob = nd_blob;
+				prev_control_char = c;
+				curr_mode = OUT_OF_LABEL;
 			}
-			else {
-				label.append(1, c);
+			else if (c == ':') {
+				if (curr_mode == IN_LABEL and prev_control_char != ':') {
+					add_taxon_label(taxa, label, curr_node, tree);
+				}
+				prev_control_char = c;
+				curr_mode = OUT_OF_LABEL;
 			}
-		}
-		else {
-			if (c == EOF) {
+			else if (c == ';') {
 				assert(curr_node == tree->get_root());
 				return tree;
 			}
-			if (curr_mode == IN_LABEL) {
-				if (c == '\n') {
-					filecol = 0;
-					fileline = 1;
+			else if(isgraph(c)) {
+				if (curr_mode == OUT_OF_LABEL) {
+					label.clear();
+					if (c == '\'') {
+						if (!input.good()) {
+							throw ParseExcept("Quote started then EOF", fileline, filecol, filepos);
+						}
+						for (;;) {
+							if (!input.good()) {
+								throw ParseExcept("File reading before termination of quote", fileline, filecol, filepos);
+							}
+							char q = rdbuf->sbumpc(); filepos++; filecol++;
+							if (q == '\'') {
+								const signed char d = rdbuf->sgetc(); // peek
+								if (d == '\'') {
+									label.append(1, q);
+									q = rdbuf->sbumpc(); filepos++; filecol++;
+								}
+								else {
+									break;
+								}
+							}
+							else {
+								label.append(1, q);
+							}
+						}
+						add_taxon_label(taxa, label, curr_node, tree); // handling this here works for typical trees, but it will also not reject internal node names before subtrees.
+						cache.clear();
+					}
+					else {
+						curr_mode = IN_LABEL;
+						cache.clear();
+					}
 				}
-				cache.append(1, ' '); // converts all non-graphical characters to spaces!
+				else if (!cache.empty()) {
+					label += cache;
+					cache.clear();
+				}
+				if (c == '_') {
+					label.append(1, ' ');
+				}
+				else if (c == '[') {
+					if (preserve_comments) {
+						label.append(1, '[');
+					}
+					comment_level = 1;
+					if (!input.good()) {
+						throw ParseExcept("Comment started then EOF", fileline, filecol, filepos);
+					}
+					while (comment_level > 0) {
+						if (!input.good()) {
+							throw ParseExcept("File reading before termination of comment", fileline, filecol, filepos);
+						}
+						char q = rdbuf->sbumpc(); filepos++; filecol++;
+						if (preserve_comments) {
+							label.append(1, q);
+						}
+						if (q == '[')
+							comment_level++;
+						else if (q == ']')
+							comment_level--;
+					}
+				}
+				else {
+					label.append(1, c);
+				}
+			}
+			else {
+				if (c == EOF) {
+					assert(curr_node == tree->get_root());
+					return tree;
+				}
+				if (curr_mode == IN_LABEL) {
+					if (c == '\n') {
+						filecol = 0;
+						fileline = 1;
+					}
+					cache.append(1, ' '); // converts all non-graphical characters to spaces!
+				}
 			}
 		}
+	}
+	catch (...) {
+		delete tree;
+		throw;
+	}
+	return tree;
+}
+
+template <typename T, typename U>
+Tree<T, U> * create_new_subsampled_tree(const Node<T> *src_root,
+										const std::set<const Node<T> *> & leaves,
+										const std::set<const Node<T> *> & traversed,
+									  	const T & nd_blob,
+									  	const U & tree_blob,
+									  	nnodes_t num_nodes_in_src_subtree) {
+	Tree<T, U> * tree = new Tree<T, U>();
+	try {
+		tree->blob = tree_blob;
+		if (src_root == nullptr) {
+			return tree;
+		}
+		const Node<T> * curr_src_node = src_root;
+		Node<T> * curr_dest_node = tree->get_root();
+		curr_dest_node->blob = nd_blob;
+		curr_dest_node->copy_other_data(*curr_src_node);
+		if (src_root->is_leaf()) {
+			return tree;
+		}
+		if (leaves.size() == 1) {
+			const Node<T> * leaf = *(leaves.begin());
+			assert(leaf);
+			Node<T> * n = tree->get_new_left_child(*curr_dest_node);
+			n->blob = nd_blob;
+			n->copy_other_data(*leaf);
+			return tree;
+		}
+		typename std::vector<const Node<T> *> nodes_to_copy;
+		typename std::stack<const Node<T> *> internals_stack;
+		typename std::unordered_map<const Node<T> *, Node<T> *> src2dest(3*num_nodes_in_src_subtree);
+		src2dest[curr_src_node] = curr_dest_node;
+		std::cerr << "     Mapping " << curr_src_node << "  to  " << curr_dest_node << "\n";
+
+		for (;;) {
+			nodes_to_copy.clear();
+			for (typename Node<T>::const_child_iterator ch_it = curr_src_node->begin_child(); ch_it != curr_src_node->end_child(); ++ch_it) {
+				const Node <T> * nd = &(*ch_it);
+				if (nd->is_internal()) {
+					if (traversed.find(nd) != traversed.end()) {
+						nodes_to_copy.push_back(nd);
+					}
+				}
+				else {
+					if (leaves.find(nd) != leaves.end()) {
+						nodes_to_copy.push_back(nd);
+					}
+				}
+			}
+
+			if (nodes_to_copy.size() > 1) {
+				if (curr_src_node == src_root) {
+					curr_dest_node = src2dest[curr_src_node];
+				}
+				else {
+					curr_dest_node = src2dest[curr_src_node->get_parent()];
+					Node <T> * nn = tree->get_new_child(*curr_dest_node);
+					std::cerr << "     Adding " << nn << "  (for " << curr_src_node << ") to  " << curr_dest_node << "\n";
+					assert(nn);
+					nn->blob = nd_blob;
+					nn->copy_other_data(*curr_src_node);
+					src2dest[curr_src_node] = nn;
+					std::cerr << "     Mapping " << curr_src_node << "  to  " << nn << "\n";
+					curr_dest_node = nn;
+				}
+				assert(curr_dest_node);
+				for (auto nd_it : nodes_to_copy) {
+					const Node <T> * nd = &(*nd_it);
+					if (nd->is_internal()) {
+						internals_stack.push(nd);
+					}
+					else {
+						Node <T> * nn = tree->get_new_child(*curr_dest_node);
+						std::cerr << "     Adding " << nn << "  (for " << nd << ") to  " << curr_dest_node << "\n";
+						assert(nn);
+						nn->blob = nd_blob;
+						nn->copy_other_data(*nd);
+					}
+				}
+			}
+			else {
+				assert(nodes_to_copy.size() > 0);
+				curr_dest_node = src2dest[curr_src_node->get_parent()];
+				assert(curr_dest_node);
+				const Node <T> * nd = nodes_to_copy.at(0);
+				if (nd->is_internal()) {
+					assert(curr_src_node != src_root);
+					assert(curr_src_node->get_parent());
+					internals_stack.push(nd);
+					src2dest[curr_src_node] = curr_dest_node; // map an outdegree 1 node to its parent's clone
+					std::cerr << "     Mapping " << nd << "  to  " << curr_dest_node << "\n";
+				}
+				else {
+					Node <T> * nn = tree->get_new_child(*curr_dest_node);
+					std::cerr << "     Adding " << nn << "  (for " << nd << ") to  " << curr_dest_node << "\n";
+					assert(nn);
+					nn->blob = nd_blob;
+					nn->copy_other_data(*nd);
+				}
+			}
+			if (internals_stack.empty()) {
+				return tree;
+			}
+			curr_src_node = internals_stack.top();
+			internals_stack.pop();
+		}
+
+	}
+	catch (...) {
+		delete tree;
+		throw;
 	}
 	return tree;
 }
@@ -1246,11 +1399,27 @@ struct empty_node_blob_t {
 		double get_edge_length() const {
 			return 0.0;
 		}
+		void debug_dump(std::ostream &) const {
+
+		}
+
 };
 struct empty_tree_blob_t {
 };
 
 typedef Node<empty_node_blob_t> SlimNode;
 typedef Tree<empty_node_blob_t, empty_tree_blob_t> SlimTree;
+
+////////////////////////////////////////////////////////////////////////////////
+// Utility
+//////////
+
+////////////////////////////////////////////////////////////////////////////////
+/// Return value for `key` in `umap` or `def` if the key is not found
+template<typename T, typename U>
+const U & get_or_def_const(const std::unordered_map<T, U> & umap, const T & key, const U & def) {
+	typename std::unordered_map<T, U>::const_iterator it = umap.find(key);
+	return (it == umap.end() ? def : it->second);
+}
 
 #endif // TREE_TEMPLATE_HPP
