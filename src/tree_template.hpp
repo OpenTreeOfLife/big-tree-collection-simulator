@@ -207,6 +207,23 @@ class Node {
         Node<T> * get_parent() {
             return this->_parent;
         }
+        // if nullptr is returned then, *max_rank will be the rank of the root
+        //  from `this` node.
+        Node<T> * get_ancestor_by_rank(unsigned anc_rank, unsigned *max_rank) {
+        	unsigned curr_depth = 0;
+        	Node<T> * curr_nd = this;
+        	while (curr_depth < anc_rank) {
+        		curr_nd = curr_nd->_parent;
+        		if (curr_nd == nullptr) {
+        			if (max_rank) {
+        				*max_rank = curr_depth;
+        			}
+        			return nullptr;
+        		}
+        		++curr_depth;
+        	}
+        	return curr_nd;
+        }
         const Node<T> * find_rightmost_child() const {
             if (this->_left_child == nullptr) {
                 return nullptr;

@@ -372,7 +372,7 @@ bool process_repeat_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	if (command_vec.size() != 2) {
 		std::cerr << "Expected \"REPEAT #### ;\" where ### is an integer\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	if (prog_state.curr_repeat_list) {
 		std::cerr << "Expected \"REPEAT\" commands cannot be nested! (in the current implementation)\n";
@@ -383,11 +383,11 @@ bool process_repeat_command(const ProgCommand & command_vec,
 	long count = std::strtol(count_str.c_str(), &e, 10);
 	if (e != count_str.c_str() + count_str.length()) {
 		prog_state.err_stream << "Expected a number (the weight) after the REPEAT command. found " << count_str << ".\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	if (count < 1) {
 		prog_state.err_stream << "Expected a positive number (the weight) after the REPEAT command. found " << count_str << ".\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	prog_state.repeat_count_vec.push_back((unsigned) count);
 	if (prog_state.curr_repeat_list) {
@@ -408,11 +408,11 @@ bool process_end_repeat_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	if (command_vec.size() != 1) {
 		std::cerr << "Expected no arguments after \"ENDREPEAT ;\" found \"" <<command_vec.at(1) << "\"\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	if (!prog_state.curr_repeat_list) {
 		std::cerr << "Expecting \"REPEAT\" command before \"ENDREPEAT\" \n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	assert(!prog_state.repeat_count_vec.empty());
 	assert(*prog_state.repeat_count_vec.rbegin() > 0);
@@ -459,25 +459,25 @@ bool process_weight_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	if (command_vec.size() <= 2) {
 		std::cerr << "Expected a weight then a filepath of names after the WEIGHT command.\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	std::string weight_string = command_vec[1];
 	char * e;
 	double wt = std::strtod(weight_string.c_str(), &e);
 	if (e != weight_string.c_str() + weight_string.length()) {
 		prog_state.err_stream << "Expected a number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	if (wt < 0.0) {
 		prog_state.err_stream << "Expected a non-negative number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 
 	std::string fn = command_vec[2];
 	std::ifstream inp(fn);
 	if (!inp.good()) {
 		prog_state.err_stream << "Could not open the file " << fn << ".\n";
-		return prog_state.strict_mode;
+		return !prog_state.strict_mode;
 	}
 	const std::vector<TaxonLabel> labels = parse_labels_from_stream(inp, prog_state.taxa);
 	SimTree & tree = prog_state.get_full_tree();
@@ -500,9 +500,34 @@ bool process_weight_command(const ProgCommand & command_vec,
 	return true;
 }
 
+std::pair<bool, long> parse_pos_int(ProgState & prog_state,
+									unsigned arg_ind,
+									const ProgCommand & command_vec,
+									const char * arg_name) {
+	std::pair<bool, long> r(false, 0L);
+	if (arg_ind + 2 < command_vec.size() or command_vec[1 + arg_ind] != "=") {
+		prog_state.err_stream << "Expecting  = # after ROOTMIN\n";
+		return r;
+	}
+	char * end_ptr;
+	std::string s = command_vec[2 + arg_ind];
+	long count = std::strtol(s.c_str(), &end_ptr, 10);
+	if (end_ptr != s.c_str() + s.length() or count < 0) {
+		prog_state.err_stream << "Expected a positive number (the weight) after the ROOTMIN command. found " << s << ".\n";
+		return r;
+	}
+	r.first = true;
+	r.second = count;
+	return r;
+}
 
-bool process_sample_command(const ProgCommand & command_vec,
-						   ProgState & prog_state) {
+bool do_sample(ProgState & prog_state,
+			  unsigned root_min,
+			  unsigned root_max,
+			  unsigned in_min,
+			  unsigned in_max,
+			  unsigned out_min,
+			  unsigned out_max) {
 	SimTree & tree = prog_state.get_full_tree();
 	if (tree.blob.get_sum_leaf_weights() < 0.0) {
 		sum_leaf_weights_over_tree(tree);
@@ -512,13 +537,123 @@ bool process_sample_command(const ProgCommand & command_vec,
 	prog_state.err_stream.setf(std::ios::fixed);
 	prog_state.err_stream.precision(5);
 	prog_state.err_stream << w << '\n';
+	const unsigned max_tries = 100;
+	for (unsigned trial = 0; trial < max_tries; ++trial) {
+		// Step 1: Choose a leaf (using the leaf weighting)
+		double rand_x = prog_state.rng.uniform01() * w;
+		SimNode * leaf_nd = find_leaf_by_weight_range(tree, rand_x);
+		prog_state.err_stream << "Chose \"" << leaf_nd->get_label().c_str() << "\"\n";
+		unsigned root_depth, ingroup_size, outgroup_size;
+
+		// Step 2: choose the depth of the root
+		SimNode * ingroup_root = nullptr;
+		while (ingroup_root == nullptr) {
+			if (root_min < root_max) {
+				root_depth = prog_state.rng.rand_range(root_min, root_max);
+			}
+			else {
+				root_depth = root_min;
+			}
+			unsigned x;
+			ingroup_root = leaf_nd->get_ancestor_by_rank(root_depth, &x);
+			if (ingroup_root == nullptr or ingroup_root->get_parent() == nullptr) {
+				root_max = x - 1;
+				if (root_max < root_min) {
+					break;
+				}
+			}
+		}
+		if (ingroup_root == nullptr) {
+			continue;
+		}
+		SimNode * sample_root = ingroup_root->get_parent();
+		assert(sample_root);
+
+		//Step 3: choose the taxa
 
 
-	double rand_x = prog_state.rng.uniform01() * w;
-	SimNode * leaf_nd = find_leaf_by_weight_range(tree, rand_x);
-	std::cerr << "Chose \"" << leaf_nd->get_label().c_str() << "\"\n";
+	}
+
 	return true;
 }
+
+
+bool process_sample_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	int root_min = 1;
+	int root_max = std::numeric_limits<int>::max();
+	int in_min = 2;
+	int in_max = 2;
+	int out_min = 1;
+	int out_max = 1;
+	std::pair<bool, long> r;
+	for (unsigned arg_ind = 1; arg_ind < command_vec.size(); ++arg_ind) {
+		const std::string cap = capitalize(command_vec[arg_ind]);
+		if (cap == "ROOTMIN") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "ROOTMIN");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			root_min = r.second;
+		}
+		else if (cap == "ROOTMAX") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "ROOTMAX");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			root_max = r.second;
+		}
+		else if (cap == "INMIN") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "INMIN");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			in_min = r.second;
+		}
+		else if (cap == "INMAX") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "INMAX");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			in_max = r.second;
+		}
+		else if (cap == "OUTMIN") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "OUTMIN");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			out_min = r.second;
+		}
+		else if (cap == "OUTMAX") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "OUTMAX");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			out_max = r.second;
+		}
+		else {
+			return !prog_state.strict_mode;
+		}
+	}
+	if (root_min > root_max) {
+		std::cerr << "ROOTMAX must be at least as large as ROOTMIN\n";
+		return !prog_state.strict_mode;
+	}
+	if (in_min > in_max) {
+		std::cerr << "INMAX must be at least as large as INMIN\n";
+		return !prog_state.strict_mode;
+	}
+	if (out_min > out_max) {
+		std::cerr << "OUTMAX must be at least as large as OUTMIN\n";
+		return !prog_state.strict_mode;
+	}
+	if (do_sample(prog_state, root_min, root_max, in_min, in_max, out_min, out_max)) {
+		return !prog_state.strict_mode;
+	}
+	return true;
+}
+
+
 
 bool process_print_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
