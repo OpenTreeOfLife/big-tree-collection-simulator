@@ -8,3 +8,13 @@ Tree parsing:
         rejected_internal.newick
     in the test subdir.
 
+Labeling:
+If you have duplicate labels in the taxonomy a suffix like "_DUPLICATE#", where
+# is a unique number, will be added to the label. This may mean that the taxon
+name listed in the WEIGHTS file matches a different taxon than you anticipated.
+
+Weighting:
+Using weight differences so large that the result in rounding error. A presample
+step verifies that there are enough leaves in the selected subtree to satisfy
+the requested SAMPLE. But if some have a very low probability of being selected,
+the random number generation/choice algorithm may never return them.
