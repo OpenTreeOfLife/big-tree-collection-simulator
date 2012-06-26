@@ -447,144 +447,6 @@ bool unrecognize_arg(const char * cmd, const char * arg, ProgState & prog_state)
 }
 
 
-bool process_resolve_command(const ProgCommand & ,
-						   ProgState & prog_state) {
-	SimTree * focal_tree = prog_state.get_focal_tree();
-	assert(focal_tree);
-	resolve_polytomies(*focal_tree, prog_state.rng);
-	return true;
-}
-
-bool process_repeat_command(const ProgCommand & command_vec,
-						   ProgState & prog_state) {
-	if (command_vec.size() != 2) {
-		std::cerr << "Expected \"REPEAT #### ;\" where ### is an integer\n";
-		return !prog_state.strict_mode;
-	}
-	if (prog_state.curr_repeat_list) {
-		std::cerr << "Expected \"REPEAT\" commands cannot be nested! (in the current implementation)\n";
-		return false;
-	}
-	std::string count_str = command_vec[1];
-	char * e;
-	long count = std::strtol(count_str.c_str(), &e, 10);
-	if (e != count_str.c_str() + count_str.length()) {
-		prog_state.err_stream << "Expected a number (the weight) after the REPEAT command. found " << count_str << ".\n";
-		return !prog_state.strict_mode;
-	}
-	if (count < 1) {
-		prog_state.err_stream << "Expected a positive number (the weight) after the REPEAT command. found " << count_str << ".\n";
-		return !prog_state.strict_mode;
-	}
-	prog_state.repeat_count_vec.push_back((unsigned) count);
-	if (prog_state.curr_repeat_list) {
-		prog_state.command_list_list.push_back(*prog_state.curr_repeat_list);
-		prog_state.curr_repeat_list->second.clear();
-		prog_state.curr_repeat_list->first = true;
-	}
-	else {
-		prog_state.curr_repeat_list = &(prog_state.scratch_repeat_list);
-		prog_state.curr_repeat_list->second.clear();
-		prog_state.curr_repeat_list->first = true;
-	}
-	return true;
-}
-
-
-bool process_end_repeat_command(const ProgCommand & command_vec,
-						   ProgState & prog_state) {
-	if (command_vec.size() != 1) {
-		std::cerr << "Expected no arguments after \"ENDREPEAT ;\" found \"" <<command_vec.at(1) << "\"\n";
-		return !prog_state.strict_mode;
-	}
-	if (!prog_state.curr_repeat_list) {
-		std::cerr << "Expecting \"REPEAT\" command before \"ENDREPEAT\" \n";
-		return !prog_state.strict_mode;
-	}
-	assert(!prog_state.repeat_count_vec.empty());
-	assert(*prog_state.repeat_count_vec.rbegin() > 0);
-	unsigned end_ind = 2;
-
-	while (end_ind > 1) {
-		end_ind = (*prog_state.repeat_count_vec.rbegin()) - 1;
-		//std::cerr << "process_end_repeat_command loop end_ind = " << end_ind <<'\n';
-		if (end_ind >= 1) {
-			*prog_state.repeat_count_vec.rbegin() = end_ind;
-			prog_state.curr_repeat_list->first = false;
-			std::list<ProgCommand> to_repeat = prog_state.curr_repeat_list->second;
-			// we repeat the loop that we are currently in. This could be recursive if loops are nested
-
-			//std::cerr << "About to repeat: {\n";
-			for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
-				const ProgCommand & cmd = *c_it;
-				//std::cerr << "  " << cmd[0] << '\n';
-			}
-			//std::cerr << " }\n";
-
-			for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
-				const ProgCommand & cmd = *c_it;
-				rec_and_process_command(cmd, prog_state, false);
-			}
-		}
-		else {
-			prog_state.repeat_count_vec.pop_back();
-			assert(prog_state.curr_repeat_list);
-			if (prog_state.command_list_list.empty()) {
-				prog_state.curr_repeat_list = nullptr;
-			}
-			else {
-				*prog_state.curr_repeat_list = *prog_state.command_list_list.rbegin();
-				prog_state.command_list_list.pop_back();
-			}
-		}
-	}
-	return true;
-}
-
-bool process_weight_command(const ProgCommand & command_vec,
-						   ProgState & prog_state) {
-	if (command_vec.size() <= 2) {
-		std::cerr << "Expected a weight then a filepath of names after the WEIGHT command.\n";
-		return !prog_state.strict_mode;
-	}
-	std::string weight_string = command_vec[1];
-	char * e;
-	double wt = std::strtod(weight_string.c_str(), &e);
-	if (e != weight_string.c_str() + weight_string.length()) {
-		prog_state.err_stream << "Expected a number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
-		return !prog_state.strict_mode;
-	}
-	if (wt < 0.0) {
-		prog_state.err_stream << "Expected a non-negative number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
-		return !prog_state.strict_mode;
-	}
-
-	std::string fn = command_vec[2];
-	std::ifstream inp(fn);
-	if (!inp.good()) {
-		prog_state.err_stream << "Could not open the file " << fn << ".\n";
-		return !prog_state.strict_mode;
-	}
-	const std::vector<TaxonLabel> labels = parse_labels_from_stream(inp, prog_state.taxa);
-	SimTree & tree = prog_state.get_full_tree();
-	std::vector<TaxonLabel>::const_iterator lab_it = labels.begin();
-	tree.blob.set_sum_leaf_weights(-1);
-	for (; lab_it != labels.end(); ++lab_it) {
-		SimNode * nd = tree.find_node_by_label(*lab_it);
-		if (nd == nullptr) {
-			prog_state.err_stream << "Label \"" << lab_it->get_label() << "\" not found in tree. Ignored...\n";
-		}
-		else if (nd->is_internal()) {
-			for (auto l_it = nd->begin_leaf(); l_it != nd->end_leaf(); ++l_it) {
-				l_it->blob.set_sum_leaf_weights(wt);
-			}
-		}
-		else {
-			nd->blob.set_sum_leaf_weights(wt);
-		}
-	}
-	return true;
-}
 
 std::pair<bool, long> parse_pos_int(ProgState & prog_state,
 									unsigned arg_ind,
@@ -751,7 +613,7 @@ bool do_sample(ProgState & prog_state,
 		double rand_x = prog_state.rng.uniform01() * w;
 		const SimNode * leaf_nd = find_leaf_by_weight_range(tree, rand_x);
 		//prog_state.err_stream << "Chose \"" << leaf_nd->get_label().c_str() << "\"\n";
-		unsigned root_depth, ingroup_size, outgroup_size;
+		unsigned root_depth;
 		unsigned root_min = arg_root_min;
 		unsigned root_max = arg_root_max;
 
@@ -865,6 +727,180 @@ bool do_sample(ProgState & prog_state,
 
 	prog_state.err_stream << prog_state.max_tries << " sample trials failed. bailing out...\n";
 
+	return true;
+}
+
+
+bool process_resolve_command(const ProgCommand & ,
+						   ProgState & prog_state) {
+	SimTree * focal_tree = prog_state.get_focal_tree();
+	assert(focal_tree);
+	resolve_polytomies(*focal_tree, prog_state.rng);
+	return true;
+}
+
+bool process_repeat_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	if (command_vec.size() != 2) {
+		std::cerr << "Expected \"REPEAT #### ;\" where ### is an integer\n";
+		return !prog_state.strict_mode;
+	}
+	if (prog_state.curr_repeat_list) {
+		std::cerr << "Expected \"REPEAT\" commands cannot be nested! (in the current implementation)\n";
+		return false;
+	}
+	std::string count_str = command_vec[1];
+	char * e;
+	long count = std::strtol(count_str.c_str(), &e, 10);
+	if (e != count_str.c_str() + count_str.length()) {
+		prog_state.err_stream << "Expected a number (the weight) after the REPEAT command. found " << count_str << ".\n";
+		return !prog_state.strict_mode;
+	}
+	if (count < 1) {
+		prog_state.err_stream << "Expected a positive number (the weight) after the REPEAT command. found " << count_str << ".\n";
+		return !prog_state.strict_mode;
+	}
+	prog_state.repeat_count_vec.push_back((unsigned) count);
+	if (prog_state.curr_repeat_list) {
+		prog_state.command_list_list.push_back(*prog_state.curr_repeat_list);
+		prog_state.curr_repeat_list->second.clear();
+		prog_state.curr_repeat_list->first = true;
+	}
+	else {
+		prog_state.curr_repeat_list = &(prog_state.scratch_repeat_list);
+		prog_state.curr_repeat_list->second.clear();
+		prog_state.curr_repeat_list->first = true;
+	}
+	return true;
+}
+
+
+bool process_end_repeat_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	if (command_vec.size() != 1) {
+		std::cerr << "Expected no arguments after \"ENDREPEAT ;\" found \"" <<command_vec.at(1) << "\"\n";
+		return !prog_state.strict_mode;
+	}
+	if (!prog_state.curr_repeat_list) {
+		std::cerr << "Expecting \"REPEAT\" command before \"ENDREPEAT\" \n";
+		return !prog_state.strict_mode;
+	}
+	assert(!prog_state.repeat_count_vec.empty());
+	assert(*prog_state.repeat_count_vec.rbegin() > 0);
+	unsigned end_ind = 2;
+
+	while (end_ind > 1) {
+		end_ind = (*prog_state.repeat_count_vec.rbegin()) - 1;
+		//std::cerr << "process_end_repeat_command loop end_ind = " << end_ind <<'\n';
+		if (end_ind >= 1) {
+			*prog_state.repeat_count_vec.rbegin() = end_ind;
+			prog_state.curr_repeat_list->first = false;
+			std::list<ProgCommand> to_repeat = prog_state.curr_repeat_list->second;
+			// we repeat the loop that we are currently in. This could be recursive if loops are nested
+
+			//std::cerr << "About to repeat: {\n";
+			//for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
+			//	const ProgCommand & cmd = *c_it;
+			//std::cerr << "  " << cmd[0] << '\n';
+			//}
+			//std::cerr << " }\n";
+
+			for (std::list<ProgCommand>::const_iterator c_it = to_repeat.begin(); c_it != to_repeat.end(); ++c_it) {
+				const ProgCommand & cmd = *c_it;
+				rec_and_process_command(cmd, prog_state, false);
+			}
+		}
+		else {
+			prog_state.repeat_count_vec.pop_back();
+			assert(prog_state.curr_repeat_list);
+			if (prog_state.command_list_list.empty()) {
+				prog_state.curr_repeat_list = nullptr;
+			}
+			else {
+				*prog_state.curr_repeat_list = *prog_state.command_list_list.rbegin();
+				prog_state.command_list_list.pop_back();
+			}
+		}
+	}
+	return true;
+}
+
+bool process_set_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	std::pair<bool, long> r;
+	for (unsigned arg_ind = 1; arg_ind < command_vec.size(); ++arg_ind) {
+		const std::string cap = capitalize(command_vec[arg_ind]);
+		if (cap == "SEED") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "SEED");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			if (prog_state.verbose) {
+				prog_state.err_stream << "Setting seed to " << r.second << "\n";
+				prog_state.rng.seed(r.second);
+			}
+			arg_ind += 2;
+		}
+		else if (cap == "STRICT") {
+			if (prog_state.verbose) {
+				prog_state.err_stream << "Setting execution to strict mode.\n";
+				prog_state.rng.seed(r.second);
+			}
+			prog_state.strict_mode = true;
+		}
+		else if (cap == "VERBOSE") {
+			prog_state.err_stream << "Verbose mode enabled.\n";
+			prog_state.rng.seed(r.second);
+			prog_state.verbose = true;
+		}
+		else {
+			return !prog_state.strict_mode;
+		}
+	}
+	return true;
+}
+bool process_weight_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	if (command_vec.size() <= 2) {
+		std::cerr << "Expected a weight then a filepath of names after the WEIGHT command.\n";
+		return !prog_state.strict_mode;
+	}
+	std::string weight_string = command_vec[1];
+	char * e;
+	double wt = std::strtod(weight_string.c_str(), &e);
+	if (e != weight_string.c_str() + weight_string.length()) {
+		prog_state.err_stream << "Expected a number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
+		return !prog_state.strict_mode;
+	}
+	if (wt < 0.0) {
+		prog_state.err_stream << "Expected a non-negative number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
+		return !prog_state.strict_mode;
+	}
+
+	std::string fn = command_vec[2];
+	std::ifstream inp(fn);
+	if (!inp.good()) {
+		prog_state.err_stream << "Could not open the file " << fn << ".\n";
+		return !prog_state.strict_mode;
+	}
+	const std::vector<TaxonLabel> labels = parse_labels_from_stream(inp, prog_state.taxa);
+	SimTree & tree = prog_state.get_full_tree();
+	std::vector<TaxonLabel>::const_iterator lab_it = labels.begin();
+	tree.blob.set_sum_leaf_weights(-1);
+	for (; lab_it != labels.end(); ++lab_it) {
+		SimNode * nd = tree.find_node_by_label(*lab_it);
+		if (nd == nullptr) {
+			prog_state.err_stream << "Label \"" << lab_it->get_label() << "\" not found in tree. Ignored...\n";
+		}
+		else if (nd->is_internal()) {
+			for (auto l_it = nd->begin_leaf(); l_it != nd->end_leaf(); ++l_it) {
+				l_it->blob.set_sum_leaf_weights(wt);
+			}
+		}
+		else {
+			nd->blob.set_sum_leaf_weights(wt);
+		}
+	}
 	return true;
 }
 
@@ -1027,6 +1063,9 @@ bool process_command(const ProgCommand & command_vec,
 	else if (cmd == "SAMPLE") {
 		return process_sample_command(command_vec, prog_state);
 	}
+	else if (cmd == "SET") {
+		return process_set_command(command_vec, prog_state);
+	}
 	else if (cmd == "WEIGHT") {
 		return process_weight_command(command_vec, prog_state);
 	}
@@ -1125,8 +1164,6 @@ ProgCommand parse_command(std::istream & inp) {
 	return command_vec;
 }
 void run_command_interpreter(std::istream & command_stream,
-							 const TaxonNameUniverse & taxa,
-							 const SimTree & tree,
 							 ProgState & prog_state) {
 	std::string command;
 	bool keep_executing = true;
@@ -1141,15 +1178,32 @@ void print_help(std::ostream & out) {
 	out << PACKAGE_STRING << '\n';
 	out << "\nUsage:\n	"<< PACKAGE << " [-ns] <taxonomy-file>\n";
 	out << "Command line options:\n";
-	out << "   -h		  this help message\n";
-	out << "   -i		  interactive mode\n";
-	out << "   -n ####	  number of leaves\n";
-	out << "   -s ####	  random number seed\n";
+	out << "   -h         this help message\n";
+	out << "   -i         interactive mode\n";
+	out << "   -n ####    number of leaves\n";
+	out << "   -s ####    random number seed\n";
 	out << "\n\nIf you enter interactive mode, then commands will be read from standard input.\nThe commands are:\n";
-	out << "   OUTPUT [STD|STOP|FILE fn]   Specifies an output stream\n";
-	out << "   PRINT	 Writes the current tree to the output stream (in newick).\n";
-	out << "   RESOLVE	 Randomly resolves all polytomies in the current tree.\n";
-	out << "   QUIT		 Quits the program (surprise!)\n";
+	out << "   OUTPUT [STD|STOP|FILE filename] ;\n";
+	out << "             Specifies an output stream\n\n";
+	out << "   PRINT ;    Writes the current tree to the output stream (in newick).\n\n";
+	out << "   QUIT ;     Quits the program (surprise!)\n\n";
+	out << "   REPEAT # ; CMD ; ENDREPEAT ;\n";
+	out << "             Repeats the commands # times.\n\n";
+	out << "   RESOLVE ; Randomly resolves all polytomies in the current tree.\n\n";
+	out << "   SAMPLE RootMin = # RootMax = # InMin = # InMax = # OutMin = # OutMax = # ;\n";
+	out << "             Causes the focal tree to be created by subsampling the full tree with\n";
+	out << "               the specified root depth, ingroup and outgroup size. May fail if\n";
+	out << "               relatively few leaves in the tree satisfy the constraints.\n\n";
+	out << "   SET Seed = # Strict Verbose ;\n";
+	out << "             Used to change program behaviors. \"Seed\" control the random number\n";
+	out << "               generator. \"Strict\" causes the program to exit on any failed command.\n";
+	out << "               \"Verbose\" produces more status updates in the standard error stream.\n\n";
+	out << "   WEIGHT #.#  filename ;\n";
+	out << "             Assigns tip weigth of #.# to every taxon listed in filename (a newline-\n";
+	out << "               separated file). These weights are used to select the tips in the\n";
+	out << "               SAMPLE command. For each draw, a leaf's probability of being chosen\n";
+	out << "               is equal to its weight divided by the sum of all \"eligible\" leaves.\n";
+	out << "               weights must be positive. The default weight is 1.0.\n";
 	out << "\nCommands must be separated by semicolons !\n";
 }
 
@@ -1254,7 +1308,7 @@ int main(int argc, char *argv[]) {
 	prog_state.set_output_stream(&std::cout);
 	std::istream & command_stream = std::cin;
 	if (interactive) {
-		run_command_interpreter(command_stream, taxa, *tree, prog_state);
+		run_command_interpreter(command_stream, prog_state);
 	}
 	prog_state.set_output_file(nullptr);
 
