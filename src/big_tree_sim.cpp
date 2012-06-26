@@ -100,11 +100,15 @@ nnodes_t resolve_polytomies(Tree<T, U> & tree, RandGen & rng) {
 	nnodes_t num_nodes_added = 0;
 	std::vector<Node<T> *> attachment_points;
 
-	tree.debug_check();
+#	if ! defined(NDEBUG)
+		tree.debug_check();
+#	endif
 	for (; it != tree.end_fast_postorder(); ++it) {
 		Node<T> & nd = *it;
 		if (nd.is_polytomy()) {
-			tree.debug_check();
+#			if ! defined(NDEBUG)
+				tree.debug_check();
+#			endif
 			std::vector<Node<T> *> children = nd.get_children();
 			assert(children.size() > 2);
 			//std::cerr << " resolving polytomy with " <<	 children.size() << " children\n";
@@ -140,7 +144,9 @@ nnodes_t resolve_polytomies(Tree<T, U> & tree, RandGen & rng) {
 				}
 				attachment_points.push_back(child);
 				attachment_points.push_back(new_connector);
-				tree.debug_check();
+#				if ! defined(NDEBUG)
+					tree.debug_check();
+#				endif
 			}
 		}
 	}
@@ -438,7 +444,7 @@ class ProgState {
 		cmd_recorder_t scratch_repeat_list;
 		cmd_recorder_t *curr_repeat_list;
 		std::list<cmd_recorder_t> command_list_list;
-		unsigned max_tries = 10;
+		unsigned max_tries = 100;
 
 	private:
 		std::ostream * outp;
@@ -660,7 +666,9 @@ nnodes_t count_internal_children(SimNode * par, SimNode *avoid_node) {
 }
 
 bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, SimNode * root, ProgState & prog_state) {
-	root->debug_check_subtree_nav_pointers();
+#	if ! defined(NDEBUG)
+		root->debug_check_subtree_nav_pointers();
+#	endif
 	if (max_recon_dist == 0) {
 		return true;
 	}
@@ -742,7 +750,9 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 		connector->set_left_child_raw(moving_nd);
 		moving_nd->set_right_sib_raw(nullptr);
 	}
-	root->debug_check_subtree_nav_pointers();
+#	if ! defined(NDEBUG)
+		root->debug_check_subtree_nav_pointers();
+#	endif
 
 	// navigate to find its new attachment point
 
