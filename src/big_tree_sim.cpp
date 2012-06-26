@@ -491,7 +491,7 @@ std::pair<bool, long> parse_pos_int(ProgState & prog_state,
 	char * end_ptr;
 	std::string s = command_vec[2 + arg_ind];
 	long count = std::strtol(s.c_str(), &end_ptr, 10);
-	if (end_ptr != s.c_str() + s.length() or count < 0) {
+	if (end_ptr != s.c_str() + s.length() or count < 1) {
 		prog_state.err_stream << "Expected a positive number (the weight) after the ROOTMIN command. found " << s << ".\n";
 		return r;
 	}
@@ -969,8 +969,7 @@ bool do_sample(ProgState & prog_state,
 	}
 
 	prog_state.err_stream << prog_state.max_tries << " sample trials failed. bailing out...\n";
-
-	return true;
+	return !prog_state.strict_mode;
 }
 
 
@@ -1180,6 +1179,18 @@ bool process_set_command(const ProgCommand & command_vec,
 
 			}
 			prog_state.rng.seed(r.second);
+			arg_ind += 2;
+		}
+		else if (cap == "MAXTRIES") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "MAXTRIES");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			if (prog_state.verbose) {
+				prog_state.err_stream << "Setting MaxTries to " << r.second << "\n";
+
+			}
+			prog_state.max_tries = r.second;
 			arg_ind += 2;
 		}
 		else if (cap == "STRICT") {
@@ -1433,10 +1444,12 @@ void print_help(std::ostream & out) {
 	out << "             Causes the focal tree to be created by subsampling the full tree with\n";
 	out << "               the specified root depth, ingroup and outgroup size. May fail if\n";
 	out << "               relatively few leaves in the tree satisfy the constraints.\n";
-	out << "\n   SET Seed = # Strict Verbose ;\n";
+	out << "\n   SET Seed = # Strict Verbose MaxTries = #;\n";
 	out << "             Used to change program behaviors. \"Seed\" control the random number\n";
 	out << "               generator. \"Strict\" causes the program to exit on any failed command.\n";
 	out << "               \"Verbose\" produces more status updates in the standard error stream.\n";
+	out << "               \"MaxTries\" controls the maximum number of times the SAMPLE command will\n";
+	out << "               repeat its loop of trying to find a subsample that agrees with our constraints.\n";
 	out << "\n   SPR Rep = # ReconMin = # ReconMax = # ;\n";
 	out << "             Applies the specified number of random SPR edits to the focal tree\n";
 	out << "               ReconMin and ReconMax limit the distance the moving subtree can travel.\n";
