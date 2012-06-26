@@ -58,7 +58,13 @@ subsampled tree as the focal tree. The PRINT, RESOLVE, and SPR commands act on
 the  current focal tree (which will be the full tree if no SAMPLE command has been 
 used).
 
-### SAMPLE command
+Commands are terminated by a semicolon, not a newline! They are not case-sensitive.
+
+### RESOLVE command
+
+The RESOLVE command makes the tree binary.
+
+### SAMPLE command (and WEIGHT command)
 
 When using SAMPLE, the leaves are chosen in proportion to their leaf weights. 
 This allows you to specify a set of leaves that will be preferentially sampled
@@ -105,13 +111,47 @@ If the node selected by an SPR is attached to a polytomy, it will be reattached
 at a node (creating or adding to a polytomy). Thus the SPR operation does not
 change the number of nodes in the tree.
 
+By using the Rep=# option you can perform a sequence of # Random SPR operations
+with the same constraints in the same command.
+
 ### PRINT command
 
 The prints a newick (or NEXUS) tree to the output stream specified by the 
 last invocation of the OUT command (standard output is the default).
+
+### Additional tricks.
+
+By using " REPEAT # ; CMD1  ; CMD2 ; ENDREPEAT " you can repeat a set of 
+commands. For example
+
+    Resolve ;
+    Repeat 1000 ; 
+        Sample RootMin=5 RootMax = 35 InMin=1000 InMax=1500 OutMin=1 OutMax=2 ;
+        SPR Rep=3 ReconMax=5 ;
+        Print ;
+    EndRepeat;
+
+Using the SET command you can control how many times the SAMPLE command tries
+to find a subsampled tree before giving up, strict (exit on any failure or 
+unrecognized syntax), verbosity, and random number seed.
+
+## Performance
+Because we may use some of the tree reading and manipulation code in other 
+projects, we have tried to make this code pretty fast.  On MTH's laptop it 
+can read a 1.1 million leaf tree and produce 1000 sampled and tweaked trees of 
+over 1000 leaves each in about 50 seconds. 
+
+But there are ways we could make this faster; let us know if you encounter 
+sluggishness that it causing real problems for you.
 
 ## Caveats
 
 See the Issues.txt file for a gotcha with respect to parsing of newick trees and
 disambiguation of repeated labels.
 
+Note that if you specify very unlikely SAMPLE parameters (eg. ingroup of 
+thousands of leaves, but rootdepth of 1 or 2), the SAMPLE command may bail out 
+without creating a tree!
+
+The command line parser is crude separate each flag from others and from values
+with a space  (so "-s 12514 -x" not "-s12514 -x" or "-xs 12514").

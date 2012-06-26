@@ -1,0 +1,8 @@
+Status ; 
+Resolve ;
+Status ;
+Repeat 1000 ; 
+    Sample RootMin=5 RootMax = 35 InMin=1000 InMax=1500 OutMin=1 OutMax=2 ;
+    SPR Rep=3 ReconMax=5 ;
+    Print ;
+EndRepeat;
