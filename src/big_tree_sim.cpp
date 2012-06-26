@@ -157,7 +157,7 @@ class SimNdBlob {
 			:_edge_length(0.0),
 			_sum_leaf_weights(1.0),
 			_num_leaves_below(1),
-			_num_nodes_below(1) {
+			_num_nodes_at_or_below(1) {
 		}
 
 		double get_sum_leaf_weights() const {
@@ -175,35 +175,42 @@ class SimNdBlob {
 		void set_num_leaves_below(nnodes_t x) {
 			this->_num_leaves_below = x;
 		}
-		nnodes_t get_num_nodes_below() const {
-			return this->_num_nodes_below;
+		nnodes_t get_num_nodes_at_or_below() const {
+			return this->_num_nodes_at_or_below;
 		}
-		void set_num_nodes_below(nnodes_t x) {
-			this->_num_nodes_below = x;
+		void set_num_nodes_at_or_below(nnodes_t x) {
+			this->_num_nodes_at_or_below = x;
 		}
 		void debug_dump(std::ostream &o) const {
-			o << " sum_leaf_weights=" << this->_sum_leaf_weights << " _num_leaves_below=" << this->_num_leaves_below;
+			o << " sum_leaf_weights=" << this->_sum_leaf_weights << " _num_leaves_below=" << this->_num_leaves_below << " _num_nodes_at_or_below=" << this->_num_nodes_at_or_below;
 		}
 	private:
 		double _edge_length;
 		double _sum_leaf_weights;
 		nnodes_t _num_leaves_below;
-		nnodes_t _num_nodes_below;
+		nnodes_t _num_nodes_at_or_below;
 };
 class SimTreeBlob {
 	public:
 		SimTreeBlob()
-			:sum_leaf_weights(-1.0) {
+			:_sum_leaf_weights(-1.0) {
+		}
+		void set_is_dirty(bool) {
+			this->_sum_leaf_weights = -1; //@TEMP currently using the sum of leaf weights
+		}
+		bool is_dirty() const {
+			return (this->_sum_leaf_weights < 0); //@TEMP
 		}
 
+
 		double get_sum_leaf_weights() {
-			return this->sum_leaf_weights;
+			return this->_sum_leaf_weights;
 		}
 		void set_sum_leaf_weights(double x) {
-			this->sum_leaf_weights = x;
+			this->_sum_leaf_weights = x;
 		}
 	private:
-		double sum_leaf_weights;
+		double _sum_leaf_weights; // <0 is a flag for "is_dirty".  @TEMP
 };
 typedef Node<SimNdBlob> SimNode;
 typedef Tree<SimNdBlob, SimTreeBlob> SimTree;
@@ -225,27 +232,34 @@ void sum_leaf_weights_over_tree(Tree<T,U> & tree) {
 		if (nd.is_internal()) {
 			double x = 0.0;
 			nnodes_t num_leaves_below = 0;
-			nnodes_t num_nodes_below = 0;
+			nnodes_t num_nodes_at_or_below = 1;
 			for (child_it c_it = nd.begin_child(); c_it != nd.end_child(); ++c_it) {
 				const T & blob = c_it->blob;
 				x += blob.get_sum_leaf_weights();
 				num_leaves_below += blob.get_num_leaves_below();
-				num_nodes_below += blob.get_num_nodes_below();
+				num_nodes_at_or_below += blob.get_num_nodes_at_or_below();
 			}
 			nd.blob.set_sum_leaf_weights(x);
 			nd.blob.set_num_leaves_below(num_leaves_below);
-			nd.blob.set_num_nodes_below(1 + num_leaves_below);
+			nd.blob.set_num_nodes_at_or_below(num_nodes_at_or_below);
 		}
 	}
 	assert(tree.get_root());
 	tree.blob.set_sum_leaf_weights(tree.get_root()->blob.get_sum_leaf_weights());
 }
 
+template <typename T, typename U>
+void refresh_blob_data(Tree<T,U> & tree) {
+	//std::cerr << "In refresh_blob_data. Before...\n"; tree.get_root()->debug_dump(std::cerr, true);
+	sum_leaf_weights_over_tree<T, U>(tree);
+	//std::cerr << "In refresh_blob_data. After...\n"; tree.get_root()->debug_dump(std::cerr, true);
+
+}
 
 
 template <typename T, typename U>
 Node<T> * find_leaf_by_weight_range(Tree<T,U> & tree, double x) {
-	if (tree.blob.get_sum_leaf_weights() < 0.0) {
+	if (tree.blob.is_dirty()) {
 		sum_leaf_weights_over_tree(tree);
 	}
 	if (x > tree.blob.get_sum_leaf_weights()) {
@@ -597,15 +611,17 @@ bool sample_leaves_and_traversed(const SimNode & root,
 // all nodes have an equal probability of being chosen. The root will not be
 // returned
 SimNode * choose_rand_node_below_exclusive(SimNode & root, ProgState & prog_state) {
-	nnodes_t num_nodes_below_root = root.blob.get_num_leaves_below();
-	if (num_nodes_below_root <= 1) {
+	//std::cerr << "choose_rand_node_below_exclusive\n"; root.debug_dump(prog_state.err_stream, true);
+	nnodes_t num_nodes_at_or_below_root = root.blob.get_num_nodes_at_or_below();
+	if (num_nodes_at_or_below_root <= 1) {
 		return nullptr;
 	}
 	// start at 1 to avoid root
-	nnodes_t node_ind = prog_state.rng.rand_range(1, num_nodes_below_root);
+	nnodes_t node_ind = prog_state.rng.rand_range(1, num_nodes_at_or_below_root);
 	SimNode * curr_node = &root;
 	std::stack<SimNode *> nd_stack;
 	for (;;) {
+		//std::cerr<< "node_ind = " << node_ind << "\ncurr_node info: "; curr_node->debug_dump(prog_state.err_stream, false);
 		if (node_ind == 0) {
 			return curr_node;
 		}
@@ -613,11 +629,12 @@ SimNode * choose_rand_node_below_exclusive(SimNode & root, ProgState & prog_stat
 		curr_node = curr_node->get_left_child();
 		for (;;) {
 			assert(curr_node);
-			if (node_ind < curr_node->blob.get_num_nodes_below()) {
+			if (node_ind < curr_node->blob.get_num_nodes_at_or_below()) {
 				break;
 			}
-			node_ind -= curr_node->blob.get_num_nodes_below();
+			node_ind -= curr_node->blob.get_num_nodes_at_or_below();
 			curr_node = curr_node->get_right_sib();
+			//std::cerr<< "inner for loop: node_ind = " << node_ind << "\ncurr_node info: "; curr_node->debug_dump(prog_state.err_stream, false);
 		}
 	}
 }
@@ -697,13 +714,11 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 			assert(curr_attach->is_internal()); // we bale earlier if this is false
 			connector = curr_attach;
 			curr_attach = root;
-			if (root->get_left_child() == moving_nd) {
-				SimNode * n = connector->get_left_child();
-				root->set_left_child_raw(n);
-				while (n) {
-					n->set_parent_raw(root);
-					n = n->get_right_sib();
-				}
+			SimNode * n = connector->get_left_child();
+			root->set_left_child_raw(n);
+			while (n) {
+				n->set_parent_raw(root);
+				n = n->get_right_sib();
 			}
 			moving_up = true;
 		}
@@ -727,6 +742,7 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 		connector->set_left_child_raw(moving_nd);
 		moving_nd->set_right_sib_raw(nullptr);
 	}
+	root->debug_check_subtree_nav_pointers();
 
 	// navigate to find its new attachment point
 
@@ -789,7 +805,11 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 bool do_rand_spr(SimTree & tree, const nnodes_t recon_min, const nnodes_t recon_max, ProgState & prog_state) {
 	SimNode * moving_nd = choose_rand_node_below_exclusive(*(tree.get_root()), prog_state);
 	nnodes_t recon_dist = (nnodes_t) (recon_min == recon_max ? recon_min : prog_state.rng.rand_range(recon_min, recon_max));
-	return slide_node_lteq_num_edges(moving_nd, recon_dist, tree.get_root(), prog_state);
+	bool success = slide_node_lteq_num_edges(moving_nd, recon_dist, tree.get_root(), prog_state);
+	if (success) {
+		tree.flag_blob_as_dirty();
+	}
+	return success;
 }
 
 bool do_sample(ProgState & prog_state,
@@ -800,8 +820,8 @@ bool do_sample(ProgState & prog_state,
 			  const nnodes_t out_min,
 			  const nnodes_t arg_out_max) {
 	SimTree & tree = prog_state.get_full_tree();
-	if (tree.blob.get_sum_leaf_weights() < 0.0) {
-		sum_leaf_weights_over_tree(tree);
+	if (tree.blob_is_dirty()) {
+		refresh_blob_data(tree);
 	}
 	const double w = tree.blob.get_sum_leaf_weights();
 	// prog_state.err_stream << "tree.blob.get_sum_leaf_weights() = ";
@@ -930,6 +950,7 @@ bool do_sample(ProgState & prog_state,
 		//}
 		prog_state.sample_new_focal(sample_root, leaf_nodes, traversed_internals_nodes);
 		if (prog_state.get_focal_tree()) {
+			prog_state.get_focal_tree()->flag_blob_as_dirty();
 			return true;
 		}
 	}
@@ -951,6 +972,9 @@ bool process_resolve_command(const ProgCommand & command_vec,
 	SimTree * focal_tree = prog_state.get_focal_tree();
 	assert(focal_tree);
 	resolve_polytomies(*focal_tree, prog_state.rng);
+	if (prog_state.verbose) {
+		prog_state.err_stream << "RESOLVE successful.\n";
+	}
 	return true;
 }
 
@@ -1046,8 +1070,8 @@ bool process_spr_command(const ProgCommand & command_vec,
 	SimTree * tree = prog_state.get_focal_tree();
 	assert(tree and tree->get_root());
 	// assure that the tip counts are right... (side effect of sum_leaf_weights_over_tree)
-	if (tree->blob.get_sum_leaf_weights() < 0.0) {
-		sum_leaf_weights_over_tree(*tree);
+	if (tree->blob_is_dirty()) {
+		refresh_blob_data(*tree);
 	}
 	nnodes_t recon_min = 1;
 	nnodes_t recon_max = 2*tree->get_root()->blob.get_num_leaves_below();
@@ -1092,6 +1116,9 @@ bool process_spr_command(const ProgCommand & command_vec,
 		if (!do_rand_spr(*tree, recon_min, recon_max, prog_state)) {
 			return false; // failure in tree manip is fatal.
 		}
+	}
+	if (prog_state.verbose) {
+		prog_state.err_stream << "RESOLVE successful.\n";
 	}
 	return true;
 }
@@ -1262,9 +1289,16 @@ bool process_sample_command(const ProgCommand & command_vec,
 		return !prog_state.strict_mode;
 	}
 	if (do_sample(prog_state, root_min, root_max, in_min, in_max, out_min, out_max)) {
-		return !prog_state.strict_mode;
+		if (prog_state.verbose) {
+			prog_state.err_stream << "SAMPLE successful.\n";
+		}
+
+		return true;
 	}
-	return true;
+	if (prog_state.verbose) {
+		prog_state.err_stream << "SAMPLE unsuccessful.\n";
+	}
+	return !prog_state.strict_mode;
 }
 
 
@@ -1283,6 +1317,9 @@ bool process_print_command(const ProgCommand & command_vec,
 		}
 	}
 	prog_state.print_tree(false, nexus);
+	if (prog_state.verbose) {
+		prog_state.err_stream << "PRINT successful.\n";
+	}
 	return true;
 }
 bool process_out_command(const ProgCommand &  command_vec,
@@ -1304,14 +1341,23 @@ bool process_out_command(const ProgCommand &  command_vec,
 			prog_state.set_output_stream(&std::cout);
 			return !prog_state.strict_mode;
 		}
+		if (prog_state.verbose) {
+			prog_state.err_stream << "OUT set to \"" << filepath <<"\"\n";
+		}
 		return true;
 	}
 	if (arg == "STD") {
 		prog_state.set_output_stream(&std::cout);
+		if (prog_state.verbose) {
+			prog_state.err_stream << "OUT stopped.\n";
+		}
 		return true;
 	}
 	if (arg == "STOP") {
 		prog_state.set_output_file(nullptr);
+		if (prog_state.verbose) {
+			prog_state.err_stream << "OUT stopped.\n";
+		}
 		return true;
 	}
 	return unrecognize_arg("OUT", command_vec.at(1).c_str(), prog_state);
