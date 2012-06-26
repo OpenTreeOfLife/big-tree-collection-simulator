@@ -1,4 +1,4 @@
-# big-tree-collection-simulator
+# big-tree-sim
 
 This tool will be capable of simulating a large of a collection of big trees
 based on a classification. The motivation is to provide a set of trees that

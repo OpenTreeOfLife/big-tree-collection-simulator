@@ -18,3 +18,7 @@ Using weight differences so large that the result in rounding error. A presample
 step verifies that there are enough leaves in the selected subtree to satisfy
 the requested SAMPLE. But if some have a very low probability of being selected,
 the random number generation/choice algorithm may never return them.
+
+Name:
+"big-tree-sim" is a lame name. Plus it is more of a tree tweaker than a 
+de-novo simulator.  I'm open to suggestions.
