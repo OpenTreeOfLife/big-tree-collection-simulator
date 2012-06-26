@@ -830,7 +830,7 @@ class Node {
 		mutable T blob;
 
 		void debug_dump(std::ostream & o, bool recursive, std::string indent=std::string()) const {
-			o << indent << "Node label=\"";
+			o << indent << (this->is_internal() ? "Node" : "Leaf") << " label=\"";
 			if (_label.c_str()) {
 				o << this->_label.c_str() << "\"";
 			}
@@ -938,6 +938,13 @@ class Tree {
 
 
 		mutable U blob; //
+
+		void flag_blob_as_dirty() {
+			this->blob.set_is_dirty(true);
+		}
+		bool blob_is_dirty() const {
+			return this->blob.is_dirty();
+		}
 
 	private:
 		void _replinish_node_store();
@@ -1399,7 +1406,15 @@ struct empty_node_blob_t {
 		}
 
 };
+
 struct empty_tree_blob_t {
+	public:
+		void set_is_dirty(bool) {
+		}
+		bool is_dirty() const {
+			return false;
+		}
+
 };
 
 typedef Node<empty_node_blob_t> SlimNode;
