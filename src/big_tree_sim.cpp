@@ -975,6 +975,35 @@ bool process_resolve_command(const ProgCommand & command_vec,
 	if (prog_state.verbose) {
 		prog_state.err_stream << "RESOLVE successful.\n";
 	}
+	focal_tree->flag_blob_as_dirty();
+	return true;
+}
+bool process_status_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	if (command_vec.size() > 1) {
+		if (!unrecognize_arg("STATUS", command_vec.at(1).c_str(), prog_state)) {
+			return false;
+		}
+	}
+	SimTree & full_tree = prog_state.get_full_tree();
+	SimTree * focal_tree = prog_state.get_focal_tree();
+
+	if (full_tree.blob_is_dirty()) {
+		refresh_blob_data(full_tree);
+	}
+	if (focal_tree and focal_tree->blob_is_dirty()) {
+		refresh_blob_data(*focal_tree);
+	}
+	prog_state.err_stream << "Full tree has " << full_tree.get_root()->blob.get_num_leaves_below() << " leaves and " << full_tree.get_root()->blob.get_num_nodes_at_or_below() << " nodes.\n";
+	prog_state.err_stream << "The sum of its leaf weights is " << full_tree.blob.get_sum_leaf_weights() << " .\n";
+	if (focal_tree == nullptr or focal_tree == &full_tree) {
+		prog_state.err_stream << "No subsampled tree\n";
+	}
+	else {
+		prog_state.err_stream << "The subsampled tree has " << focal_tree->get_root()->blob.get_num_leaves_below() << " leaves and " << focal_tree->get_root()->blob.get_num_nodes_at_or_below() << " nodes.\n";
+		prog_state.err_stream << "The sum of its leaf weights is " << focal_tree->blob.get_sum_leaf_weights() << " .\n";
+	}
+
 	return true;
 }
 
@@ -1362,6 +1391,53 @@ bool process_out_command(const ProgCommand &  command_vec,
 	return unrecognize_arg("OUT", command_vec.at(1).c_str(), prog_state);
 }
 
+
+void print_help(std::ostream & out) {
+	out << PACKAGE_STRING << '\n';
+	out << "\nUsage:\n	"<< PACKAGE << " [-chns] <filename-with-taxonomy-in-newick>\n";
+	out << "Command line options:\n";
+	out << "   -c <filename>   Specifies the path to a command file \n";
+	out << "   -h              Prints this help message\n";
+	out << "   -n ####         Gives a hint for the number of leaves\n";
+	out << "   -s ####         Sets the initial random number seed\n";
+	out << "   -x              Do not warn about duplicate labels\n";
+	out << "\nAfter reading the taxonomy file commands will be read.\n";
+	out << "  if a command file is not specified with the -c flag, then commands\n";
+	out << "  will be read from standard input.\nThe commands are:\n";
+	out << "\n   HELP     shows this message ;\n";
+	out << "\n   OUTPUT [STD|STOP|FILE filename] ;\n";
+	out << "             Specifies an output stream\n";
+	out << "\n   PRINT ;    Writes the current tree to the output stream (in newick).\n";
+	out << "\n   QUIT ;     Quits the program (surprise!)\n";
+	out << "\n   REPEAT # ; CMD ; ENDREPEAT ;\n";
+	out << "             Repeats the command(s) # times.\n";
+	out << "\n   RESOLVE ; Randomly resolves all polytomies in the current tree.\n";
+	out << "\n   SAMPLE RootMin = # RootMax = # InMin = # InMax = # OutMin = # OutMax = # ;\n";
+	out << "             Causes the focal tree to be created by subsampling the full tree with\n";
+	out << "               the specified root depth, ingroup and outgroup size. May fail if\n";
+	out << "               relatively few leaves in the tree satisfy the constraints.\n";
+	out << "\n   SET Seed = # Strict Verbose ;\n";
+	out << "             Used to change program behaviors. \"Seed\" control the random number\n";
+	out << "               generator. \"Strict\" causes the program to exit on any failed command.\n";
+	out << "               \"Verbose\" produces more status updates in the standard error stream.\n";
+	out << "\n   SPR Rep = # ReconMin = # ReconMax = # ;\n";
+	out << "             Applies the specified number of random SPR edits to the focal tree\n";
+	out << "               ReconMin and ReconMax limit the distance the moving subtree can travel.\n";
+	out << "               The default ReconMin is 1. The movement of a subtree is similar to the.\n";
+	out << "               extending TBR of MrBayes - a decision of which way to move is made at.\n";
+	out << "               every fork. Note that the SPR will stop if the moving node \"runs out\"\n";
+	out << "               of tree to traverse. Thus the movement can be smaller than reconmin; in\n";
+	out << "               fact it is possible that a move will not change the topology.\n";
+	out << "\n   STATUS ; Reports summary statistics about the current tree(s).\n";
+	out << "\n   WEIGHT #.#  filename ;\n";
+	out << "             Assigns tip weigth of #.# to every taxon listed in filename (a newline-\n";
+	out << "               separated file). These weights are used to select the tips in the\n";
+	out << "               SAMPLE command. For each draw, a leaf's probability of being chosen\n";
+	out << "               is equal to its weight divided by the sum of all \"eligible\" leaves.\n";
+	out << "               weights must be positive. The default weight is 1.0.\n";
+	out << "\nCommands must be separated by semicolons !\n";
+}
+
 bool process_command(const ProgCommand & command_vec,
 					 ProgState & prog_state) {
 	if (command_vec.empty()) {
@@ -1375,8 +1451,12 @@ bool process_command(const ProgCommand & command_vec,
 	//		prog_state.err_stream << '"' << word << "\" ";
 	//}
 	//prog_state.err_stream << "\n";
-	if (cmd == "QUIT") {
+	if (cmd == "QUIT" or cmd == "EXIT" or cmd == "Q") {
 		return false;
+	}
+	if (cmd == "HELP") {
+		print_help(std::cerr);
+		return true;
 	}
 	else if (cmd == "ENDREPEAT") {
 		return process_end_repeat_command(command_vec, prog_state);
@@ -1402,11 +1482,14 @@ bool process_command(const ProgCommand & command_vec,
 	else if (cmd == "SPR") {
 		return process_spr_command(command_vec, prog_state);
 	}
+	else if (cmd == "STATUS") {
+		return process_status_command(command_vec, prog_state);
+	}
 	else if (cmd == "WEIGHT") {
 		return process_weight_command(command_vec, prog_state);
 	}
 	else {
-		prog_state.err_stream << "Command \"" << command_vec[0] << "\" is not recognized (use \"QUIT ;\" to exit)\n";
+		prog_state.err_stream << PACKAGE << ": Command \"" << command_vec[0] << "\" is not recognized (use \"QUIT ;\" to exit)\n";
 		return !prog_state.strict_mode;
 	}
 	return true;
@@ -1510,60 +1593,34 @@ void run_command_interpreter(std::istream & command_stream,
 										 		 true);
 	}
 }
-void print_help(std::ostream & out) {
-	out << PACKAGE_STRING << '\n';
-	out << "\nUsage:\n	"<< PACKAGE << " [-ns] <taxonomy-file>\n";
-	out << "Command line options:\n";
-	out << "   -h         this help message\n";
-	out << "   -i         interactive mode\n";
-	out << "   -n ####    number of leaves\n";
-	out << "   -s ####    random number seed\n";
-	out << "\n\nIf you enter interactive mode, then commands will be read from standard input.\nThe commands are:\n";
-	out << "   OUTPUT [STD|STOP|FILE filename] ;\n";
-	out << "             Specifies an output stream\n\n";
-	out << "   PRINT ;    Writes the current tree to the output stream (in newick).\n\n";
-	out << "   QUIT ;     Quits the program (surprise!)\n\n";
-	out << "   REPEAT # ; CMD ; ENDREPEAT ;\n";
-	out << "             Repeats the commands # times.\n\n";
-	out << "   RESOLVE ; Randomly resolves all polytomies in the current tree.\n\n";
-	out << "   SAMPLE RootMin = # RootMax = # InMin = # InMax = # OutMin = # OutMax = # ;\n";
-	out << "             Causes the focal tree to be created by subsampling the full tree with\n";
-	out << "               the specified root depth, ingroup and outgroup size. May fail if\n";
-	out << "               relatively few leaves in the tree satisfy the constraints.\n\n";
-	out << "   SET Seed = # Strict Verbose ;\n";
-	out << "             Used to change program behaviors. \"Seed\" control the random number\n";
-	out << "               generator. \"Strict\" causes the program to exit on any failed command.\n";
-	out << "               \"Verbose\" produces more status updates in the standard error stream.\n\n";
-	out << "   WEIGHT #.#  filename ;\n";
-	out << "             Assigns tip weigth of #.# to every taxon listed in filename (a newline-\n";
-	out << "               separated file). These weights are used to select the tips in the\n";
-	out << "               SAMPLE command. For each draw, a leaf's probability of being chosen\n";
-	out << "               is equal to its weight divided by the sum of all \"eligible\" leaves.\n";
-	out << "               weights must be positive. The default weight is 1.0.\n";
-	out << "\nCommands must be separated by semicolons !\n";
+
+void warn_dup_label_callback(const std::string & original_label,
+					const std::string & disambiguated_label,
+					unsigned dup_num,
+					void * /*nd_ptr*/) {
+	std::cerr << "Duplicate label \"" << original_label << "\" instance #" << dup_num << " found. Label changed to \"" << disambiguated_label << "\"\n";
 }
-
-
 int main(int argc, char *argv[]) {
 	std::ios_base::sync_with_stdio(false);
 	if (argc < 2) {
-		std::cerr << "Expecting a file path to a newick formatted tree\n";
+		std::cerr << PACKAGE << ": Expecting a file path to a newick formatted tree\n";
 		return 1;
 	}
 	std::string tree_filename;
+	std::string cmd_filename;
 	char prev_flag = '\0';
 	char * endptr;
-	bool interactive = false;
 	RandGen::uint_seed_t seed = 0;
+	bool warn_for_dup_label = true;
 	for (int i = 1; i < argc; ++i) {
 		if (prev_flag == 'n') {
 			long int n = std::strtol(argv[i], &endptr, 10);
 			if (endptr == argv[i]) {
-				std::cerr << "Expecting number after -n\n";
+				std::cerr << PACKAGE << ": Expecting number after -n\n";
 				return 1;
 			}
 			if (n < 4) {
-				std::cerr << "Expecting number of leaves > 4\n";
+				std::cerr << PACKAGE << ": Expecting number of leaves > 4\n";
 				return 1;
 			}
 			g_num_taxa_buckets = (unsigned long) 3*n;
@@ -1573,37 +1630,50 @@ int main(int argc, char *argv[]) {
 		else if (prev_flag == 's') {
 			long int n = std::strtol(argv[i], &endptr, 10);
 			if (endptr == argv[i]) {
-				std::cerr << "Expecting number after -s\n";
+				std::cerr << PACKAGE << ": Expecting number after -s\n";
 				return 1;
 			}
 			if (n < 1) {
-				std::cerr << "Expecting the random number seed to be > 1\n";
+				std::cerr << PACKAGE << ": Expecting the random number seed to be > 1\n";
 				return 1;
 			}
 			seed = (RandGen::uint_seed_t) n; //safe, positivity checked
+			prev_flag = '\0';
+		}
+		else if (prev_flag == 'c') {
+			cmd_filename = argv[i];
+			if (cmd_filename.empty()) {
+				std::cerr << PACKAGE << ": Expecting a filepath after the -c flag.\n";
+				return 1;
+			}
 			prev_flag = '\0';
 		}
 		else if (prev_flag == '\0') {
 			std::string arg(argv[i]);
 			if (arg.length() > 1 and arg[0] == '-') {
 				if (arg.length() > 2) {
-					std::cerr << "Expecting each flag to be specified as a separate argument\n";
+					std::cerr << PACKAGE << ": Expecting each flag to be specified as a separate argument\n";
 					return 1;
 				}
 				if (arg[1] == 'h') {
 					print_help(std::cerr);
 					return 0;
 				}
-				else if (arg[1] == 'i') {
-					interactive = true;
+				else if (arg[1] == 'x') {
+					warn_for_dup_label = false;
 				}
 				else {
 					prev_flag = arg[1];
+					if (std::strchr("csn", prev_flag) == nullptr) {
+						std::cerr << PACKAGE << ": Unknown flag -" << prev_flag << "\n";
+						return 1;
+					}
 				}
+
 			}
 			else {
 				if (!tree_filename.empty()) {
-					std::cerr << "Expecting only one tree filename argument\n";
+					std::cerr << PACKAGE << ": Expecting only one tree filename argument\n";
 					return 1;
 				}
 				tree_filename.assign(argv[i]);
@@ -1612,29 +1682,43 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (tree_filename.empty()) {
-		std::cerr << "Expecting only a tree filename argument\n";
+		std::cerr << PACKAGE << ": Expecting only a tree filename argument\n";
 		return 1;
 	}
 	std::ifstream inp(tree_filename.c_str());
 	if (!inp.good()) {
-		std::cerr << "Could not open " << tree_filename << "\n";
+		std::cerr << PACKAGE << ": Could not open " << tree_filename << "\n";
 		return 2;
 	}
+
+	std::ifstream cmd_inp;
+	if (!cmd_filename.empty()) {
+		cmd_inp.open(cmd_filename);
+		if (!cmd_inp.good()) {
+			std::cerr << PACKAGE << ": Could not open " << cmd_filename << "\n";
+			return 2;
+		}
+	}
+
 	TaxonNameUniverse taxa;
 	SimTree * tree = nullptr;
 	SimNdBlob nd_blob;
 	SimTreeBlob tree_blob;
 	try {
-
-		tree = parse_from_newick_stream<SimNdBlob, SimTreeBlob>(inp, taxa, nd_blob, tree_blob);
+		dup_label_callback_ptr_t w_ptr = (warn_for_dup_label ? warn_dup_label_callback : nullptr);
+		tree = parse_from_newick_stream<SimNdBlob, SimTreeBlob>(inp,
+																taxa,
+																nd_blob,
+																tree_blob,
+																w_ptr);
 		if (tree == nullptr) {
-			std::cerr << "No tree found!\n";
+			std::cerr << PACKAGE << ": No tree found!\n";
 			return 1;
 		}
 		std::cerr << taxa.get_num_labels() << " labels read.\n";
 	}
 	catch (ParseExcept & x) {
-		std::cerr << "\nError:	" << x.message << "\nAt line = " << x.fileline << " at column = " << x.filecol << " at pos = " << x.filepos << "\n";
+		std::cerr << PACKAGE << " Error:	" << x.message << "\nAt line = " << x.fileline << " at column = " << x.filecol << " at pos = " << x.filepos << "\n";
 		return 3;
 	}
 
@@ -1643,8 +1727,11 @@ int main(int argc, char *argv[]) {
 	prog_state.tree_blob = tree_blob;
 	prog_state.set_output_stream(&std::cout);
 	std::istream & command_stream = std::cin;
-	if (interactive) {
+	if (cmd_filename.empty()) {
 		run_command_interpreter(command_stream, prog_state);
+	}
+	else {
+		run_command_interpreter(cmd_inp, prog_state);
 	}
 	prog_state.set_output_file(nullptr);
 

@@ -1,0 +1,1 @@
+ resolve ; sample ; spr ; print ; quit ;

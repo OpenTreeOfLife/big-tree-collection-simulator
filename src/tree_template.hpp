@@ -21,6 +21,14 @@ typedef unsigned long nnodes_t; // big enough to index the # of nodes
 extern nnodes_t g_num_taxa_buckets; // 3* numbere of taxa works well
 extern nnodes_t g_initial_node_store_size;
 
+// call back function that will take a Node<T> *
+typedef void (*dup_label_callback_ptr_t)(const std::string &, // original label
+	                                	 const std::string &, // disambiguated label
+	                                	 unsigned,            // duplicate #
+	                                	 void *);             // Node<T> * (if called via parse_from_newick_stream)
+
+
+
 template<typename T> class Node;
 template<typename T, typename U> class Tree;
 class TaxonLabel {
@@ -97,7 +105,9 @@ class TaxonNameUniverse {
 		nnodes_t get_num_labels() {
 			return this->_str2TaxonLabel.size();
 		}
-		TaxonLabel _register_new_name(const std::string & label);
+		TaxonLabel register_new_name(const std::string & label,
+									 dup_label_callback_ptr_t callback=nullptr,
+									 void * dub_blob=nullptr);
 		const TaxonLabel * find_name(const std::string & label) const {
 			std::unordered_map<std::string, TaxonLabel>::const_iterator it;
 			it = this->_str2TaxonLabel.find(label);
@@ -109,7 +119,11 @@ class TaxonNameUniverse {
 };
 
 template<typename T, typename U>
-TaxonLabel add_taxon_label(TaxonNameUniverse & taxa, const std::string & label, Node<T> * nd, Tree<T, U> * tree);
+TaxonLabel add_taxon_label(TaxonNameUniverse & taxa,
+						   const std::string & label,
+						   Node<T> * nd,
+						   Tree<T, U> * tree,
+						   dup_label_callback_ptr_t callback=nullptr);
 
 template<typename T>
 class Node {
@@ -979,8 +993,12 @@ class ParseExcept {
 
 
 template<typename T, typename U>
-inline TaxonLabel add_taxon_label(TaxonNameUniverse & taxa, const std::string & label, Node<T> * nd, Tree<T, U> * tree) {
-	TaxonLabel tl = taxa._register_new_name(label);
+inline TaxonLabel add_taxon_label(TaxonNameUniverse & taxa,
+								  const std::string & label,
+								  Node<T> * nd,
+								  Tree<T, U> * tree,
+								  dup_label_callback_ptr_t cb) {
+	TaxonLabel tl = taxa.register_new_name(label, cb, (void *)(nd));
 	//std::cerr << "Adding label \"" << tl.get_label() << "\"\n";
 	nd->set_label(tl);
 	if (tree) {
@@ -992,7 +1010,9 @@ inline TaxonLabel add_taxon_label(TaxonNameUniverse & taxa, const std::string & 
 inline TaxonNameUniverse::TaxonNameUniverse()
 	:_str2TaxonLabel(g_num_taxa_buckets){
 }
-inline TaxonLabel TaxonNameUniverse::_register_new_name(const std::string & label) {
+inline TaxonLabel TaxonNameUniverse::register_new_name(const std::string & label,
+														dup_label_callback_ptr_t callback,
+														void * callback_blob) {
 	std::unordered_map<std::string, TaxonLabel>::const_iterator labIt = this->_str2TaxonLabel.find(label);
 	if (labIt == this->_str2TaxonLabel.end()) {
 		TaxonLabel tl(label, 0);
@@ -1008,6 +1028,9 @@ inline TaxonLabel TaxonNameUniverse::_register_new_name(const std::string & labe
 		new_label.assign(disambig_label.str());
 		labIt = this->_str2TaxonLabel.find(new_label);
 		if (labIt == this->_str2TaxonLabel.end()) {
+			if (callback) {
+				callback(label, new_label, dup_num, callback_blob);
+			}
 			TaxonLabel tl(new_label, 0);
 			this->_str2TaxonLabel[new_label] = tl;
 			return tl;
@@ -1130,7 +1153,8 @@ template<typename T, typename U>
 Tree<T, U> * parse_from_newick_stream(std::istream & input,
 									  TaxonNameUniverse & taxa,
 									  const T & nd_blob,
-									  const U & tree_blob) {
+									  const U & tree_blob,
+									  dup_label_callback_ptr_t callback) {
 	enum READING_MODE {IN_LABEL, OUT_OF_LABEL, IN_QUOTE};
 	READING_MODE curr_mode = OUT_OF_LABEL;
 	std::string label;
@@ -1151,7 +1175,7 @@ Tree<T, U> * parse_from_newick_stream(std::istream & input,
 			signed char c = rdbuf->sbumpc(); filepos++; filecol++;
 			if (c == ',') {
 				if (curr_mode == IN_LABEL and prev_control_char != ':') {
-					add_taxon_label(taxa, label, curr_node, tree);
+					add_taxon_label(taxa, label, curr_node, tree, callback);
 				}
 				else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
 					throw ParseExcept("Expecting every leaf to have a label. Found a comma.", fileline, filecol, filepos);
@@ -1163,7 +1187,7 @@ Tree<T, U> * parse_from_newick_stream(std::istream & input,
 			}
 			else if (c == ')') {
 				if (curr_mode == IN_LABEL and prev_control_char != ':') {
-					add_taxon_label(taxa, label, curr_node, tree);
+					add_taxon_label(taxa, label, curr_node, tree, callback);
 				}
 				else if (curr_node->get_label().empty() and curr_node->get_left_child() == nullptr) {
 					throw ParseExcept("Expecting every leaf to have a label. Found a closed parenthesis.", fileline, filecol, filepos);
@@ -1183,7 +1207,7 @@ Tree<T, U> * parse_from_newick_stream(std::istream & input,
 			}
 			else if (c == ':') {
 				if (curr_mode == IN_LABEL and prev_control_char != ':') {
-					add_taxon_label(taxa, label, curr_node, tree);
+					add_taxon_label(taxa, label, curr_node, tree, callback);
 				}
 				prev_control_char = c;
 				curr_mode = OUT_OF_LABEL;
@@ -1218,7 +1242,7 @@ Tree<T, U> * parse_from_newick_stream(std::istream & input,
 								label.append(1, q);
 							}
 						}
-						add_taxon_label(taxa, label, curr_node, tree); // handling this here works for typical trees, but it will also not reject internal node names before subtrees.
+						add_taxon_label(taxa, label, curr_node, tree, callback); // handling this here works for typical trees, but it will also not reject internal node names before subtrees.
 						cache.clear();
 					}
 					else {
