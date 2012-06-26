@@ -156,7 +156,8 @@ class SimNdBlob {
 		SimNdBlob()
 			:_edge_length(0.0),
 			_sum_leaf_weights(1.0),
-			_num_leaves_below(1) {
+			_num_leaves_below(1),
+			_num_nodes_below(1) {
 		}
 
 		double get_sum_leaf_weights() const {
@@ -174,6 +175,12 @@ class SimNdBlob {
 		void set_num_leaves_below(nnodes_t x) {
 			this->_num_leaves_below = x;
 		}
+		nnodes_t get_num_nodes_below() const {
+			return this->_num_nodes_below;
+		}
+		void set_num_nodes_below(nnodes_t x) {
+			this->_num_nodes_below = x;
+		}
 		void debug_dump(std::ostream &o) const {
 			o << " sum_leaf_weights=" << this->_sum_leaf_weights << " _num_leaves_below=" << this->_num_leaves_below;
 		}
@@ -181,6 +188,7 @@ class SimNdBlob {
 		double _edge_length;
 		double _sum_leaf_weights;
 		nnodes_t _num_leaves_below;
+		nnodes_t _num_nodes_below;
 };
 class SimTreeBlob {
 	public:
@@ -217,13 +225,16 @@ void sum_leaf_weights_over_tree(Tree<T,U> & tree) {
 		if (nd.is_internal()) {
 			double x = 0.0;
 			nnodes_t num_leaves_below = 0;
+			nnodes_t num_nodes_below = 0;
 			for (child_it c_it = nd.begin_child(); c_it != nd.end_child(); ++c_it) {
 				const T & blob = c_it->blob;
 				x += blob.get_sum_leaf_weights();
 				num_leaves_below += blob.get_num_leaves_below();
+				num_nodes_below += blob.get_num_nodes_below();
 			}
 			nd.blob.set_sum_leaf_weights(x);
 			nd.blob.set_num_leaves_below(num_leaves_below);
+			nd.blob.set_num_nodes_below(1 + num_leaves_below);
 		}
 	}
 	assert(tree.get_root());
@@ -582,6 +593,195 @@ bool sample_leaves_and_traversed(const SimNode & root,
 	return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// all nodes have an equal probability of being chosen. The root will not be
+// returned
+SimNode * choose_rand_node_below_exclusive(SimNode & root, ProgState & prog_state) {
+	nnodes_t num_nodes_below_root = root.blob.get_num_leaves_below();
+	if (num_nodes_below_root <= 1) {
+		return nullptr;
+	}
+	// start at 1 to avoid root
+	nnodes_t node_ind = prog_state.rng.rand_range(1, num_nodes_below_root);
+	SimNode * curr_node = &root;
+	std::stack<SimNode *> nd_stack;
+	for (;;) {
+		if (node_ind == 0) {
+			return curr_node;
+		}
+		node_ind--; // subtract 1 for the current Node
+		curr_node = curr_node->get_left_child();
+		for (;;) {
+			assert(curr_node);
+			if (node_ind < curr_node->blob.get_num_nodes_below()) {
+				break;
+			}
+			node_ind -= curr_node->blob.get_num_nodes_below();
+			curr_node = curr_node->get_right_sib();
+		}
+	}
+}
+
+
+std::vector<SimNode *>	get_internal_children(SimNode * par, SimNode *avoid_node) {
+	std::vector<SimNode *> child_vec = par->get_children();
+	typedef std::vector<SimNode *>::const_iterator vec_node_ptr_it;
+	std::vector<SimNode *> poss_up;
+	poss_up.reserve(child_vec.size() - 1);
+	for (vec_node_ptr_it c_it = child_vec.begin(); c_it != child_vec.end(); ++c_it) {
+		SimNode * nd;
+		nd = (*c_it);
+		if (nd != avoid_node and nd->is_internal()) {
+			poss_up.push_back(nd);
+		}
+	}
+	return poss_up;
+}
+nnodes_t count_internal_children(SimNode * par, SimNode *avoid_node) {
+	std::vector<SimNode *> child_vec = get_internal_children(par, avoid_node);
+	return child_vec.size();
+}
+
+bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, SimNode * root, ProgState & prog_state) {
+	if (max_recon_dist == 0) {
+		return true;
+	}
+	assert(moving_nd);
+	SimNode * par =  moving_nd->get_parent();
+	assert(par);
+	SimNode * curr_attach = nullptr;
+	SimNode * avoid_node = nullptr;
+	bool moving_up;
+	std::vector<SimNode *> child_vec;
+	std::vector<SimNode *> poss_up;
+	const bool attach_at_polytomy = par->is_polytomy();
+	if (attach_at_polytomy) {
+		// treat par as attachment, only move to internal nodes.
+		curr_attach = par;
+	}
+	else {
+		// treat sister as attachment, move to any node, attach below on exit, .
+		curr_attach = moving_nd->get_right_sib();
+		if (curr_attach == nullptr) {
+			curr_attach = par->get_left_child();
+			assert(curr_attach and curr_attach != moving_nd);
+		}
+		if (par == root) { // what a pain, we have to keep the root stable
+			if (curr_attach->is_leaf()) {
+				return true; // no move is possible, this will be a no-op swap
+			}
+		}
+	}
+	// first decide whether moving up or down...
+	nnodes_t num_poss_up = (attach_at_polytomy ? count_internal_children(par, moving_nd) : curr_attach->get_num_children());
+	const nnodes_t num_poss_down = 1;
+	double prob_up = ((double) num_poss_up) / ((double)(num_poss_down + num_poss_up));
+	moving_up = (prog_state.rng.uniform01() < prob_up ? true : false);
+
+	// detach moving_nd from its polytomy
+	SimNode * connector = nullptr;
+	if (attach_at_polytomy) {
+		if (par->get_left_child() == moving_nd) {
+			par->set_left_child(moving_nd->get_right_sib());
+		}
+		else {
+			SimNode * l_sib = moving_nd->find_left_sib();
+			assert(l_sib);
+			l_sib->set_right_sib(moving_nd->get_right_sib());
+		}
+	}
+	else {
+		// also detach the connector node to use when reattaching...
+		if (par == root) { // what a pain, we have to keep the root stable
+			assert(curr_attach->is_internal()); // we bale earlier if this is false
+			connector = curr_attach;
+			curr_attach = root;
+			if (root->get_left_child() == moving_nd) {
+				SimNode * n = connector->get_left_child();
+				root->set_left_child_raw(n);
+				while (n) {
+					n->set_parent_raw(root);
+					n = n->get_right_sib();
+				}
+			}
+			moving_up = true;
+		}
+		else {
+			connector = par;
+			SimNode * grand_parent = par->get_parent();
+			curr_attach->set_parent_raw(grand_parent);
+			assert(curr_attach->get_right_sib() == nullptr or curr_attach->get_right_sib() == moving_nd);
+			curr_attach->set_right_sib_raw(par->get_right_sib());
+			if (grand_parent->get_left_child() == connector) {
+				grand_parent->set_left_child_raw(curr_attach);
+				assert(curr_attach->get_right_sib() != nullptr and curr_attach->get_right_sib() != moving_nd);
+			}
+			else {
+				SimNode * pls = par->find_left_sib();
+				pls->set_right_sib_raw(curr_attach);
+			}
+		}
+		connector->set_parent_raw(nullptr);
+		moving_nd->set_parent_raw(connector);
+		connector->set_left_child_raw(moving_nd);
+		moving_nd->set_right_sib_raw(nullptr);
+	}
+
+	// navigate to find its new attachment point
+
+	while (max_recon_dist > 0) {
+		if (moving_up) {
+			poss_up = (attach_at_polytomy ? get_internal_children(curr_attach, avoid_node) : curr_attach->get_children());
+			if (poss_up.empty()) {
+				break;
+			}
+			curr_attach = avoid_node;
+			while (curr_attach == avoid_node) {
+				choose_element(poss_up, prog_state.rng);
+			}
+			avoid_node = nullptr;
+		}
+		else {
+			if (curr_attach == root) {
+				moving_up = true;
+				++max_recon_dist; // increment to cancel the decrement and make this pivot a no-op
+			}
+			else {
+				avoid_node = curr_attach;
+				if (par == root and !attach_at_polytomy) {
+					curr_attach = root;
+					moving_up = true;
+					++max_recon_dist; // increment to cancel the decrement and make this pivot a no-op
+				}
+				else {
+					num_poss_up = (attach_at_polytomy ? count_internal_children(par, avoid_node) : (par->get_num_children() - 1));
+					double prob_up = ((double) num_poss_up) / ((double)(num_poss_down + num_poss_up));
+					moving_up = (prog_state.rng.uniform01() < prob_up ? true : false);
+					curr_attach = par;
+				}
+			}
+		}
+		max_recon_dist--;
+	}
+	assert(curr_attach);
+	assert(moving_nd);
+	if (attach_at_polytomy) {
+		curr_attach->add_new_child(moving_nd);
+	}
+	else {
+		assert(connector);
+		assert(curr_attach != root);
+		curr_attach->bisect_edge_with_node(connector);
+		connector->add_new_child(moving_nd);
+	}
+	return true;
+}
+
+bool do_rand_spr(SimTree & tree, const nnodes_t recon_min, const nnodes_t recon_max, ProgState & prog_state) {
+	SimNode * moving_nd = choose_rand_node_below_exclusive(*(tree.get_root()), prog_state);
+	nnodes_t recon_dist = (nnodes_t) (recon_min == recon_max ? recon_min : prog_state.rng.rand_range(recon_min, recon_max));
+	return slide_node_lteq_num_edges(moving_nd, recon_dist, tree.get_root(), prog_state);
+}
 
 bool do_sample(ProgState & prog_state,
 			  const unsigned arg_root_min,
@@ -731,8 +931,14 @@ bool do_sample(ProgState & prog_state,
 }
 
 
-bool process_resolve_command(const ProgCommand & ,
+bool process_resolve_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
+	if (command_vec.size() > 1) {
+		if (!unrecognize_arg("RESOLVE", command_vec.at(1).c_str(), prog_state)) {
+			return false;
+		}
+	}
+
 	SimTree * focal_tree = prog_state.get_focal_tree();
 	assert(focal_tree);
 	resolve_polytomies(*focal_tree, prog_state.rng);
@@ -825,6 +1031,62 @@ bool process_end_repeat_command(const ProgCommand & command_vec,
 	return true;
 }
 
+bool process_spr_command(const ProgCommand & command_vec,
+						   ProgState & prog_state) {
+	std::pair<bool, long> r;
+	SimTree * tree = prog_state.get_focal_tree();
+	assert(tree and tree->get_root());
+	// assure that the tip counts are right... (side effect of sum_leaf_weights_over_tree)
+	if (tree->blob.get_sum_leaf_weights() < 0.0) {
+		sum_leaf_weights_over_tree(*tree);
+	}
+	nnodes_t recon_min = 1;
+	nnodes_t recon_max = 2*tree->get_root()->blob.get_num_leaves_below();
+	unsigned num_moves = 1;
+	for (unsigned arg_ind = 1; arg_ind < command_vec.size(); ++arg_ind) {
+		const std::string cap = capitalize(command_vec[arg_ind]);
+		if (cap == "REP") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "REP");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			num_moves = (unsigned)r.second;
+			arg_ind += 2;
+		}
+		else if (cap == "RECONMIN") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "RECONMAX");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			recon_min = (nnodes_t)r.second;
+			arg_ind += 2;
+		}
+		else if (cap == "RECONMAX") {
+			r = parse_pos_int(prog_state, arg_ind, command_vec, "RECONMAX");
+			if (!r.first) {
+				return !prog_state.strict_mode;
+			}
+			recon_max = (nnodes_t)r.second;
+			arg_ind += 2;
+		}
+		else {
+			if (!unrecognize_arg("SPR", command_vec.at(arg_ind).c_str(), prog_state)) {
+				return false;
+			}
+		}
+	}
+	if (recon_min > recon_max) {
+		prog_state.err_stream << "ReconMax cannot be below ReconMin!\n";
+		return !prog_state.strict_mode;
+	}
+	for (unsigned i = 0; i < num_moves; ++i) {
+		if (!do_rand_spr(*tree, recon_min, recon_max, prog_state)) {
+			return false; // failure in tree manip is fatal.
+		}
+	}
+	return true;
+}
+
 bool process_set_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	std::pair<bool, long> r;
@@ -854,7 +1116,9 @@ bool process_set_command(const ProgCommand & command_vec,
 			prog_state.verbose = true;
 		}
 		else {
-			return !prog_state.strict_mode;
+			if (!unrecognize_arg("SET", command_vec.at(arg_ind).c_str(), prog_state)) {
+				return false;
+			}
 		}
 	}
 	return true;
@@ -876,6 +1140,12 @@ bool process_weight_command(const ProgCommand & command_vec,
 		prog_state.err_stream << "Expected a non-negative number (the weight) after the WEIGHT command. found " << weight_string << ".\n";
 		return !prog_state.strict_mode;
 	}
+	if (command_vec.size() > 3) {
+		if (!unrecognize_arg("WEIGHT", command_vec.at(3).c_str(), prog_state)) {
+			return false;
+		}
+	}
+
 
 	std::string fn = command_vec[2];
 	std::ifstream inp(fn);
@@ -965,7 +1235,9 @@ bool process_sample_command(const ProgCommand & command_vec,
 			arg_ind += 2;
 		}
 		else {
-			return !prog_state.strict_mode;
+			if (!unrecognize_arg("SAMPLE", command_vec.at(arg_ind).c_str(), prog_state)) {
+				return false;
+			}
 		}
 	}
 	if (root_min > root_max) {
@@ -991,8 +1263,15 @@ bool process_sample_command(const ProgCommand & command_vec,
 bool process_print_command(const ProgCommand & command_vec,
 						   ProgState & prog_state) {
 	bool nexus = false;
-	if (command_vec.size() > 1 and capitalize(command_vec[1]) == "NEXUS") {
-		nexus = true;
+	if (command_vec.size() > 1) {
+		if (capitalize(command_vec[1]) == "NEXUS") {
+			nexus = true;
+		}
+		else {
+			if (!unrecognize_arg("PRINT", command_vec.at(1).c_str(), prog_state)) {
+				return false;
+			}
+		}
 	}
 	prog_state.print_tree(false, nexus);
 	return true;
@@ -1065,6 +1344,9 @@ bool process_command(const ProgCommand & command_vec,
 	}
 	else if (cmd == "SET") {
 		return process_set_command(command_vec, prog_state);
+	}
+	else if (cmd == "SPR") {
+		return process_spr_command(command_vec, prog_state);
 	}
 	else if (cmd == "WEIGHT") {
 		return process_weight_command(command_vec, prog_state);

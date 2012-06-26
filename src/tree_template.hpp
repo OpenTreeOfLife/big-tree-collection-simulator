@@ -170,6 +170,21 @@ class Node {
 			nd->_left_child = this;
 			this->_parent = nd;
 		}
+		void add_new_child(Node<T> * c) {
+			assert(c);
+			if (c == nullptr) {
+				return;
+			}
+			c->_parent = this;
+			c->_right_sib = nullptr;
+			if (this->_left_child) {
+				this->find_rightmost_child()->set_right_sib_raw(c);
+			}
+			else {
+				this->_left_child = c;
+			}
+
+		}
 		/// sets _left_child and _parent fields for a new left child. Does NOT alter previous _left_child Node
 		void set_left_child(Node<T> * c) {
 			this->_left_child = c;
@@ -248,21 +263,8 @@ class Node {
 			}
 			return this->_left_child->get_rightmost_sib();
 		}
-		Node<T> * find_left_sib(){
-			if (this->_parent == nullptr) {
-				return nullptr;
-			}
-			Node<T> * ls = this->_parent->_left_child;
-			assert(ls);
-			if (ls == this) {
-				return nullptr;
-			}
-			assert(ls->_right_sib);
-			while (ls->_right_sib != this) {
-				assert(ls->_right_sib);
-				ls = ls->_right_sib;
-			}
-			return ls;
+		Node<T> * find_rightmost_child() {
+			return const_cast<Node<T> *>(static_cast<const Node<T> &>(*this).find_rightmost_child());
 		}
 		const Node<T> * find_left_sib() const {
 			if (this->_parent == nullptr) {
@@ -279,20 +281,11 @@ class Node {
 			}
 			return ls;
 		}
+		Node<T> * find_left_sib(){
+			return const_cast<Node<T> *>(static_cast<const Node<T> &>(*this).find_left_sib());
+		}
 
 		// Find the returns the node that is the leftmost child of the leftmost child of the leftmost child...
-		Node<T> * find_furthest_left_des() {
-			Node<T> * p = this->get_left_child();
-			if (p == nullptr) {
-				return nullptr;
-			}
-			Node<T> * n = p->get_left_child();
-			while (n != nullptr) {
-				 p = n;
-				 n = p->get_left_child();
-			}
-			return p;
-		}
 		const Node<T> * find_furthest_left_des() const {
 			const Node<T> * p = this->get_left_child();
 			if (p == nullptr) {
@@ -304,6 +297,9 @@ class Node {
 				 n = p->get_left_child();
 			}
 			return p;
+		}
+		Node<T> * find_furthest_left_des() {
+			return const_cast<Node<T> *>(static_cast<const Node<T> &>(*this).find_furthest_left_des());
 		}
 
 		// Find the returns the node that is the rightmost child of the rightmost child of the rightmost child...
@@ -934,7 +930,6 @@ class Tree {
 			}
 			return this->get_new_left_child(old_nd);
 		}
-
 		void debug_check() const {
 #			if ! defined(NDEBUG)
 				this->_root->debug_check_subtree_nav_pointers();
