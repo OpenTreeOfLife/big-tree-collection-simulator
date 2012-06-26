@@ -118,3 +118,11 @@ std::vector<TaxonLabel> parse_labels_from_stream(std::istream & input,
 	}
 	return vec;
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Written by Mark T. Holder. 2012. Available for use under the terms of either
+//  the BSD or GPL (v3) license. (see BSDLicense.txt GPL.txt). Take your pick.
+// No WARRANTY!
+////////////////////////////////////////////////////////////////////////////////
+

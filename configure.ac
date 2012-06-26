@@ -1,7 +1,7 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT(BIG-TREE-SIM, 0.0.1, mtholder@gmail.com)
+AC_INIT(BIG-TREE-SIM, 0.0.2a, mtholder@gmail.com)
 AC_CONFIG_HEADERS([config.h])
 
 AC_PREREQ(2.57)

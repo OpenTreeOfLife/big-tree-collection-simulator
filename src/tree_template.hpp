@@ -1457,3 +1457,8 @@ const U & get_or_def_const(const std::unordered_map<T, U> & umap, const T & key,
 }
 
 #endif // TREE_TEMPLATE_HPP
+////////////////////////////////////////////////////////////////////////////////
+// Written by Mark T. Holder. 2012. Available for use under the terms of either
+//  the BSD or GPL (v3) license. (see BSDLicense.txt GPL.txt). Take your pick.
+// No WARRANTY!
+////////////////////////////////////////////////////////////////////////////////
