@@ -798,17 +798,20 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 		curr_attach->bisect_edge_with_node(connector);
 		connector->add_new_child(moving_nd);
 	}
-	root->debug_check_subtree_nav_pointers();
+#	if ! defined(NDEBUG)
+		root->debug_check_subtree_nav_pointers();
+#	endif
 	return true;
 }
 
 bool do_rand_spr(SimTree & tree, const nnodes_t recon_min, const nnodes_t recon_max, ProgState & prog_state) {
+	if (tree.blob_is_dirty()) {
+		refresh_blob_data(tree);
+	}
 	SimNode * moving_nd = choose_rand_node_below_exclusive(*(tree.get_root()), prog_state);
 	nnodes_t recon_dist = (nnodes_t) (recon_min == recon_max ? recon_min : prog_state.rng.rand_range(recon_min, recon_max));
 	bool success = slide_node_lteq_num_edges(moving_nd, recon_dist, tree.get_root(), prog_state);
-	if (success) {
-		tree.flag_blob_as_dirty();
-	}
+	tree.flag_blob_as_dirty(); // temp should update blob, rather just flagging it as dirty...
 	return success;
 }
 
@@ -1235,6 +1238,7 @@ bool process_weight_command(const ProgCommand & command_vec,
 			nd->blob.set_sum_leaf_weights(wt);
 		}
 	}
+	tree.flag_blob_as_dirty();
 	return true;
 }
 
@@ -1317,6 +1321,9 @@ bool process_sample_command(const ProgCommand & command_vec,
 		return !prog_state.strict_mode;
 	}
 	if (do_sample(prog_state, root_min, root_max, in_min, in_max, out_min, out_max)) {
+		if (prog_state.get_focal_tree()) {
+			prog_state.get_focal_tree()->flag_blob_as_dirty(); // temp should update blob, rather just flagging it as dirty...
+		}
 		if (prog_state.verbose) {
 			prog_state.err_stream << "SAMPLE successful.\n";
 		}
