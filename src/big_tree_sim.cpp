@@ -10,7 +10,7 @@
 #include <ios>
 #include <random>
 
-#include <config.h>
+#include "config.h"
 #include "tree_template.hpp"
 ////////////////////////////////////////////////////////////////////////////////
 // RNGImpl
