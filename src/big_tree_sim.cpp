@@ -643,6 +643,7 @@ nnodes_t count_internal_children(SimNode * par, SimNode *avoid_node) {
 }
 
 bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, SimNode * root, ProgState & prog_state) {
+	root->debug_check_subtree_nav_pointers();
 	if (max_recon_dist == 0) {
 		return true;
 	}
@@ -736,8 +737,13 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 				break;
 			}
 			curr_attach = avoid_node;
-			while (curr_attach == avoid_node) {
-				choose_element(poss_up, prog_state.rng);
+			if (poss_up.size() == 1) {
+				assert(poss_up[0] and poss_up[0] != avoid_node);
+			}
+			else {
+				while (curr_attach == avoid_node) {
+					curr_attach = choose_element(poss_up, prog_state.rng);
+				}
 			}
 			avoid_node = nullptr;
 		}
@@ -748,6 +754,7 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 			}
 			else {
 				avoid_node = curr_attach;
+				par = curr_attach->get_parent();
 				if (par == root and !attach_at_polytomy) {
 					curr_attach = root;
 					moving_up = true;
@@ -771,9 +778,11 @@ bool slide_node_lteq_num_edges(SimNode * moving_nd, nnodes_t max_recon_dist, Sim
 	else {
 		assert(connector);
 		assert(curr_attach != root);
+		assert(curr_attach->get_parent());
 		curr_attach->bisect_edge_with_node(connector);
 		connector->add_new_child(moving_nd);
 	}
+	root->debug_check_subtree_nav_pointers();
 	return true;
 }
 
