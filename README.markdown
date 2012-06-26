@@ -83,6 +83,7 @@ With the SAMPLE command, you can specify a root depth, ingroup and ougroup size.
 The outgroup is always a set of leaves selected from the sister of your ingroup.
 The basic sample procedure is to repeat the following until a tree satisfies
 the constraint:
+
     1. randomly choose a leaf (according to weights) from the full tree,
     2. randomly choose an ingroup root depth within the constraints,
     3. See if the ingroup and outgroup sizes can be met by the chosen root, if
