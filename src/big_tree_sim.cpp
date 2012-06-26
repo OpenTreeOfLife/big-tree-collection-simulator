@@ -1135,20 +1135,19 @@ bool process_set_command(const ProgCommand & command_vec,
 			}
 			if (prog_state.verbose) {
 				prog_state.err_stream << "Setting seed to " << r.second << "\n";
-				prog_state.rng.seed(r.second);
+
 			}
+			prog_state.rng.seed(r.second);
 			arg_ind += 2;
 		}
 		else if (cap == "STRICT") {
 			if (prog_state.verbose) {
 				prog_state.err_stream << "Setting execution to strict mode.\n";
-				prog_state.rng.seed(r.second);
 			}
 			prog_state.strict_mode = true;
 		}
 		else if (cap == "VERBOSE") {
 			prog_state.err_stream << "Verbose mode enabled.\n";
-			prog_state.rng.seed(r.second);
 			prog_state.verbose = true;
 		}
 		else {
