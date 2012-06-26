@@ -84,18 +84,13 @@ The outgroup is always a set of leaves selected from the sister of your ingroup.
 The basic sample procedure is to repeat the following until a tree satisfies
 the constraint:
 
-    1. randomly choose a leaf (according to weights) from the full tree,
-    2. randomly choose an ingroup root depth within the constraints,
-    3. See if the ingroup and outgroup sizes can be met by the chosen root, if
-        "yes" go to step 4. If "no" go to step 2 (or back to step 1 if there 
-        are no other rooting points to try for this leaf choice).
-    4. Randomly choose an ingroup size according within the constraints.
-    5. Randomly select other ingroup leaves (the leaf chosen in step 1 is one 
-        member of the ingroup) or go back to 4 if there are not enough leaves
-        in the clade.
-    6. Repeat steps 4 and 5 for the outgroup.
-    7. Make a copy of the tree induced by the select leaves and store it as the
-        focal tree.
+ 1. randomly choose a leaf (according to weights) from the full tree,
+ 2. randomly choose an ingroup root depth within the constraints,
+ 3. See if the ingroup and outgroup sizes can be met by the chosen root, if "yes" go to step 4. If "no" go to step 2 (or back to step 1 if there are no other rooting points to try for this leaf choice).
+ 4. Randomly choose an ingroup size according within the constraints.
+ 5. Randomly select other ingroup leaves (the leaf chosen in step 1 is one member of the ingroup) or go back to 4 if there are not enough leaves in the clade.
+ 6. Repeat steps 4 and 5 for the outgroup.
+ 7. Make a copy of the tree induced by the select leaves and store it as the focal tree.
 
 ### SPR command
 
